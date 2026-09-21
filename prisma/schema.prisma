@@ -1,0 +1,645 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// AUTH & AUDIT
+// ----------------------------------------------------
+
+model User {
+  id           String        @id @default(uuid())
+  username     String        @unique
+  passwordHash String
+  fullName     String
+  role         String        @default("ADMIN") // ADMIN, CASHIER, MANAGER
+  status       String        @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  sessions     UserSession[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  token        String    @unique
+  expiresAt    DateTime
+  lastActiveAt DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String   // SALE_CREATE, STOCK_ADJUST, PRICE_CHANGE, INVOICE_CANCEL, DB_RESTORE, etc.
+  entityType String   // Sale, Product, Settings, Customer, etc.
+  entityId   String?
+  oldValue   String?  // JSON stringified diff
+  newValue   String?  // JSON stringified diff
+  reason     String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ----------------------------------------------------
+// PRODUCT CATALOG
+// ----------------------------------------------------
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Brand {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  status    String    @default("ACTIVE")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("brands")
+}
+
+model Unit {
+  id           String    @id @default(uuid())
+  name         String    @unique // e.g. Piece, Kilogram, Box, Meter
+  shortCode    String    @unique // e.g. PCS, KG, BOX, MTR
+  allowDecimal Boolean   @default(false)
+  status       String    @default("ACTIVE")
+  products     Product[]
+
+  @@map("units")
+}
+
+model Product {
+  id            String             @id @default(uuid())
+  name          String
+  sku           String             @unique
+  barcode       String?            @unique
+  categoryId    String?
+  brandId       String?
+  unitId        String
+  purchasePrice Decimal            @default(0) // Decimal representation
+  salePrice     Decimal            @default(0)
+  taxRate       Decimal            @default(0) // Percentage: 0, 5, 12, 18, 28
+  openingStock  Decimal            @default(0)
+  reorderLevel  Decimal            @default(10)
+  currentStock  Decimal            @default(0) // Performance cache, reconciled with stock_ledger
+  status        String             @default("ACTIVE") // ACTIVE, INACTIVE
+  imageUrl      String?            // Product image: URL or base64 data URI
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  category      Category?          @relation(fields: [categoryId], references: [id])
+  brand         Brand?             @relation(fields: [brandId], references: [id])
+  unit          Unit               @relation(fields: [unitId], references: [id])
+
+  stockLedger   StockLedger[]
+  adjustments   StockAdjustment[]
+  purchaseItems PurchaseItem[]
+  saleItems     SaleItem[]
+  saleReturnItems SalesReturnItem[]
+  purchaseReturnItems PurchaseReturnItem[]
+
+  @@index([name])
+  @@index([status])
+  @@index([categoryId])
+  @@map("products")
+}
+
+// ----------------------------------------------------
+// INVENTORY & STOCK LEDGER
+// ----------------------------------------------------
+
+model StockLedger {
+  id              String   @id @default(uuid())
+  productId       String
+  transactionType String   // OPENING, PURCHASE, SALE, RETURN_IN, RETURN_OUT, ADJUSTMENT_IN, ADJUSTMENT_OUT
+  referenceId     String   // Reference to Sale, Purchase, Adjustment, Return ID
+  quantityChange  Decimal  // Positive for additions, negative for deductions
+  balanceAfter    Decimal  // Reconstructed exact stock balance after movement
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  product         Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([transactionType])
+  @@index([referenceId])
+  @@map("stock_ledger")
+}
+
+model StockAdjustment {
+  id        String   @id @default(uuid())
+  productId String
+  type      String   // ADJUSTMENT_IN, ADJUSTMENT_OUT
+  quantity  Decimal
+  reason    String
+  createdAt DateTime @default(now())
+
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@map("stock_adjustments")
+}
+
+// ----------------------------------------------------
+// CUSTOMERS & CUSTOMER LEDGER
+// ----------------------------------------------------
+
+model Customer {
+  id             String            @id @default(uuid())
+  name           String
+  phone          String?           @unique
+  email          String?
+  address        String?
+  openingBalance Decimal           @default(0)
+  currentBalance Decimal           @default(0) // Fast cache of ledger balance
+  status         String            @default("ACTIVE")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  sales          Sale[]
+  ledger         CustomerLedger[]
+  payments       CustomerPayment[]
+
+  @@index([name])
+  @@map("customers")
+}
+
+model CustomerLedger {
+  id          String   @id @default(uuid())
+  customerId  String
+  type        String   // INVOICE, PAYMENT_RECEIVED, SALES_RETURN, OPENING_BALANCE
+  referenceId String
+  debit       Decimal  @default(0) // Increases customer balance owed
+  credit      Decimal  @default(0) // Decreases customer balance owed
+  balance     Decimal  // Running balance
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("customer_ledger")
+}
+
+model CustomerPayment {
+  id            String   @id @default(uuid())
+  customerId    String
+  amount        Decimal
+  paymentMethod String   // CASH, CARD, UPI, BANK_TRANSFER, CHEQUE
+  reference     String?
+  notes         String?
+  paymentDate   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  customer      Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([paymentDate])
+  @@map("customer_payments")
+}
+
+// ----------------------------------------------------
+// SUPPLIERS & SUPPLIER LEDGER
+// ----------------------------------------------------
+
+model Supplier {
+  id             String            @id @default(uuid())
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  gstin          String?
+  openingBalance Decimal           @default(0)
+  currentBalance Decimal           @default(0) // Fast cache of payable balance
+  status         String            @default("ACTIVE")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  purchases      Purchase[]
+  ledger         SupplierLedger[]
+  payments       SupplierPayment[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+model SupplierLedger {
+  id          String   @id @default(uuid())
+  supplierId  String
+  type        String   // PURCHASE, PAYMENT, PURCHASE_RETURN, OPENING_BALANCE
+  referenceId String
+  debit       Decimal  @default(0) // Decreases payable (payment made to supplier)
+  credit      Decimal  @default(0) // Increases payable (purchase made on credit)
+  balance     Decimal  // Running payable balance
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([supplierId, createdAt])
+  @@map("supplier_ledger")
+}
+
+model SupplierPayment {
+  id            String   @id @default(uuid())
+  supplierId    String
+  amount        Decimal
+  paymentMethod String   // CASH, CARD, UPI, BANK_TRANSFER, CHEQUE
+  reference     String?
+  notes         String?
+  paymentDate   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([supplierId])
+  @@index([paymentDate])
+  @@map("supplier_payments")
+}
+
+// ----------------------------------------------------
+// PURCHASES & PURCHASE RETURNS
+// ----------------------------------------------------
+
+model Purchase {
+  id             String             @id @default(uuid())
+  purchaseNumber String             @unique
+  supplierId     String?            // Null denotes Cash Supplier
+  purchaseDate   DateTime           @default(now())
+  subtotal       Decimal
+  discount       Decimal            @default(0)
+  tax            Decimal            @default(0)
+  total          Decimal
+  paidAmount     Decimal            @default(0)
+  dueAmount      Decimal            @default(0)
+  paymentMethod  String             @default("CASH")
+  status         String             @default("POSTED") // DRAFT, POSTED, CANCELLED
+  notes          String?
+  createdAt      DateTime           @default(now())
+
+  supplier       Supplier?          @relation(fields: [supplierId], references: [id])
+  items          PurchaseItem[]
+  payments       PurchasePayment[]
+  returns        PurchaseReturn[]
+
+  @@index([purchaseDate])
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id            String   @id @default(uuid())
+  purchaseId    String
+  productId     String
+  quantity      Decimal
+  purchasePrice Decimal
+  discount      Decimal  @default(0)
+  taxRate       Decimal  @default(0)
+  taxAmount     Decimal  @default(0)
+  lineTotal     Decimal
+
+  purchase      Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product       Product  @relation(fields: [productId], references: [id])
+  returnItems   PurchaseReturnItem[]
+
+  @@map("purchase_items")
+}
+
+model PurchasePayment {
+  id            String   @id @default(uuid())
+  purchaseId    String
+  amount        Decimal
+  paymentMethod String
+  createdAt     DateTime @default(now())
+
+  purchase      Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@map("purchase_payments")
+}
+
+model PurchaseReturn {
+  id             String               @id @default(uuid())
+  returnNumber   String               @unique
+  purchaseId     String
+  returnDate     DateTime             @default(now())
+  subtotal       Decimal              @default(0)
+  discount       Decimal              @default(0)
+  tax            Decimal              @default(0)
+  totalAmount    Decimal
+  refundType     String               @default("SUPPLIER_PAYABLE_DEDUCTION")
+  status         String               @default("POSTED")
+  notes          String?
+  createdAt      DateTime             @default(now())
+
+  purchase       Purchase             @relation(fields: [purchaseId], references: [id])
+  items          PurchaseReturnItem[]
+
+  @@index([returnDate])
+  @@index([purchaseId])
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnItem {
+  id               String         @id @default(uuid())
+  purchaseReturnId String
+  purchaseItemId   String?
+  productId        String
+  quantity         Decimal
+  unitPrice        Decimal
+  discount         Decimal        @default(0)
+  taxRate          Decimal        @default(0)
+  taxAmount        Decimal        @default(0)
+  lineTotal        Decimal
+
+  purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  purchaseItem     PurchaseItem?  @relation(fields: [purchaseItemId], references: [id])
+  product          Product        @relation(fields: [productId], references: [id])
+
+  @@map("purchase_return_items")
+}
+
+// ----------------------------------------------------
+// POS / SALES & SALES RETURNS
+// ----------------------------------------------------
+
+model Sale {
+  id            String            @id @default(uuid())
+  invoiceNumber String            @unique
+  customerId    String?           // Null denotes Cash Customer
+  saleDate      DateTime          @default(now())
+  subtotal      Decimal
+  discount      Decimal           @default(0)
+  tax           Decimal           @default(0)
+  grandTotal    Decimal
+  paidAmount    Decimal           @default(0)
+  dueAmount     Decimal           @default(0)
+  paymentMethod String            @default("CASH") // CASH, CARD, UPI, BANK_TRANSFER, CREDIT, SPLIT
+  status        String            @default("POSTED") // DRAFT, POSTED, CANCELLED
+  notes         String?
+  createdAt     DateTime          @default(now())
+
+  customer      Customer?         @relation(fields: [customerId], references: [id])
+  items         SaleItem[]
+  payments      SalePayment[]
+  returns       SalesReturn[]
+  whatsappQueue WhatsAppQueue[]
+
+  @@index([saleDate])
+  @@index([customerId])
+  @@index([status])
+  @@map("sales")
+}
+
+model SaleItem {
+  id           String   @id @default(uuid())
+  saleId       String
+  productId    String
+  quantity     Decimal
+  sellingPrice Decimal  // Price sold per unit
+  costPrice    Decimal  // HISTORICAL COST CAPTURED AT TIME OF SALE FOR IMMUTABLE PROFIT
+  discount     Decimal  @default(0)
+  taxRate      Decimal  @default(0)
+  taxAmount    Decimal  @default(0)
+  lineTotal    Decimal
+
+  sale         Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product  @relation(fields: [productId], references: [id])
+  returnItems  SalesReturnItem[]
+
+  @@map("sale_items")
+}
+
+model SalePayment {
+  id                String   @id @default(uuid())
+  saleId            String
+  amount            Decimal
+  paymentMethod     String
+  reference         String?
+  gatewayProvider   String?  // STRIPE, RAZORPAY, CASHFREE
+  providerOrderId   String?
+  providerPaymentId String?
+  paymentAttemptId  String?
+  createdAt         DateTime @default(now())
+
+  sale              Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayProvider, providerOrderId])
+  @@index([gatewayProvider, providerPaymentId])
+  @@map("sale_payments")
+}
+
+model PaymentAttempt {
+  id                String    @id @default(uuid())
+  provider          String    // STRIPE, RAZORPAY, CASHFREE
+  method            String    // CASH, CARD, UPI, BANK_TRANSFER, CHEQUE
+  amountMinor       Int
+  currency          String    @default("INR")
+  status            String    // CREATED, PENDING, SUCCESS, FAILED, EXPIRED, CANCELLED
+  idempotencyKey    String    @unique
+  providerOrderId   String?
+  providerPaymentId String?
+  checkoutUrl       String?
+  paymentLinkUrl    String?
+  qrPayload         String?
+  expiresAt         DateTime?
+  failureCode       String?
+  failureMessage    String?
+  metadata          String?   // JSON payload (cart, customer, cashier)
+  saleId            String?   // Populated when consumed by a Sale
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  verifiedAt        DateTime?
+
+  @@index([provider, providerOrderId])
+  @@index([provider, providerPaymentId])
+  @@index([status])
+  @@index([saleId])
+  @@map("payment_attempts")
+}
+
+
+model SalesReturn {
+  id           String            @id @default(uuid())
+  returnNumber String            @unique
+  saleId       String
+  returnDate   DateTime          @default(now())
+  subtotal     Decimal           @default(0)
+  discount     Decimal           @default(0)
+  tax          Decimal           @default(0)
+  totalAmount  Decimal
+  refundType   String            // CASH_REFUND or CUSTOMER_CREDIT
+  status       String            @default("POSTED")
+  notes        String?
+  createdAt    DateTime          @default(now())
+
+  sale         Sale              @relation(fields: [saleId], references: [id])
+  items        SalesReturnItem[]
+
+  @@index([returnDate])
+  @@index([saleId])
+  @@map("sales_returns")
+}
+
+model SalesReturnItem {
+  id            String      @id @default(uuid())
+  salesReturnId String
+  saleItemId    String?
+  productId     String
+  quantity      Decimal
+  unitPrice     Decimal
+  discount      Decimal     @default(0)
+  taxRate       Decimal     @default(0)
+  taxAmount     Decimal     @default(0)
+  lineTotal     Decimal
+
+  salesReturn   SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  saleItem      SaleItem?   @relation(fields: [saleItemId], references: [id])
+  product       Product     @relation(fields: [productId], references: [id])
+
+  @@map("sales_return_items")
+}
+
+// ----------------------------------------------------
+// EXPENSES
+// ----------------------------------------------------
+
+model ExpenseCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  status      String    @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  expenses    Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id                 String          @id @default(uuid())
+  expenseNumber      String?         @unique
+  categoryId         String
+  amount             Decimal
+  paymentMethod      String          @default("CASH")
+  date               DateTime        @default(now())
+  description        String
+  reference          String?
+  status             String          @default("POSTED") // POSTED, CANCELLED
+  cancellationReason String?
+  createdBy          String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @default(now()) @updatedAt
+
+  category           ExpenseCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([date])
+  @@index([status])
+  @@map("expenses")
+}
+
+// ----------------------------------------------------
+// SEQUENCES, QUEUES & APP SETTINGS
+// ----------------------------------------------------
+
+model InvoiceSequence {
+  id         String @id @default(uuid())
+  type       String @unique // SALE_INVOICE, PURCHASE_BILL, SALE_RETURN, PURCHASE_RETURN
+  prefix     String @default("INV-")
+  nextNumber Int    @default(1)
+  padLength  Int    @default(6)
+
+  @@map("invoice_sequences")
+}
+
+model WhatsAppQueue {
+  id         String   @id @default(uuid())
+  saleId     String
+  phone      String
+  docPath    String
+  status     String   @default("PENDING") // PENDING, SENDING, SENT, FAILED, CANCELLED
+  retryCount Int      @default(0)
+  lastError  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("whatsapp_queue")
+}
+
+model LicenseState {
+  id                  String    @id @default("ACTIVE_LICENSE")
+  licenseKey          String?
+  hardwareFingerprint String?
+  activatedAt         DateTime?
+  validUntil          DateTime?
+  lastCheckedAt       DateTime?
+  signature           String?
+
+  @@map("license_state")
+}
+
+model AppSetting {
+  key       String   @id
+  value     String   // JSON stringified configuration
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+// ----------------------------------------------------
+// RBAC: ROLES & PERMISSIONS
+// ----------------------------------------------------
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  status      String           @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model RolePermission {
+  id         String   @id @default(uuid())
+  roleId     String
+  permission String
+  createdAt  DateTime @default(now())
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@index([permission])
+  @@map("role_permissions")
+}
+
