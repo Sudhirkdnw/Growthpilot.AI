@@ -21,7 +21,11 @@ export const UpdateBrandSchema = CreateBrandSchema.partial().extend({
 export const CreateUnitSchema = z.object({
   name: z.string().trim().min(1, 'Unit name is required').max(50),
   shortCode: z.string().trim().min(1, 'Unit code is required').max(10),
-  allowDecimal: z.boolean().default(false),
+  category: z.enum(['COUNT', 'WEIGHT', 'VOLUME', 'LENGTH']).optional().default('COUNT'),
+  allowDecimal: z.boolean().optional().default(false),
+  precision: z.number().int().min(0).max(6).optional().default(0),
+  conversionFactor: z.number().positive().optional().default(1),
+  baseUnitCode: z.string().trim().max(10).optional().nullable(),
 });
 
 export const UpdateUnitSchema = CreateUnitSchema.partial().extend({
@@ -30,16 +34,8 @@ export const UpdateUnitSchema = CreateUnitSchema.partial().extend({
 
 export const CreateProductSchema = z.object({
   name: z.string().trim().min(1, 'Product name is required').max(200),
-  sku: z
-    .string()
-    .trim()
-    .min(1, 'SKU is required')
-    .max(50),
-  barcode: z
-    .string()
-    .trim()
-    .min(1, 'Barcode is required')
-    .max(50),
+  sku: z.string().trim().max(50).optional().nullable(),
+  barcode: z.string().trim().max(50).optional().nullable(),
   categoryId: z.string().uuid('Invalid category ID').optional().nullable(),
   brandId: z.string().uuid('Invalid brand ID').optional().nullable(),
   unitId: z.string().uuid('Valid unit is required'),
@@ -49,7 +45,8 @@ export const CreateProductSchema = z.object({
   taxRate: z.number().min(0, 'Tax rate cannot be negative').max(100, 'Tax rate cannot exceed 100%').default(0),
   openingStock: z.number().min(0, 'Opening stock cannot be negative').default(0),
   reorderLevel: z.number().min(0, 'Reorder level cannot be negative').default(10),
-  imageUrl: z.string().trim().max(2048).optional().nullable(),
+  allowSellByAmount: z.boolean().default(false),
+  imageUrl: z.string().trim().max(5000000, 'Image data is too large').optional().nullable(),
 });
 
 export const UpdateProductSchema = CreateProductSchema.omit({ openingStock: true }).partial().extend({
@@ -62,14 +59,15 @@ export const ProductQuerySchema = z.object({
   brandId: z.string().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ACTIVE'),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(25),
+  pageSize: z.number().int().min(1).max(50000).default(25),
 });
 
 // POS & Sales Schemas
 export const SaleItemInputSchema = z.object({
   productId: z.string().uuid(),
-  quantity: z.number().positive('Quantity must be greater than zero'),
+  quantity: z.number().positive('Quantity must be greater than zero').finite('Quantity must be a finite number'),
   sellingPrice: z.number().min(0, 'Selling price must be positive'),
+  unitCode: z.string().trim().max(10).optional().nullable(),
   discount: z.number().min(0).optional().default(0),
   taxRate: z.number().min(0).max(100).optional().default(0),
 });
@@ -97,7 +95,7 @@ export const SaleQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(25),
+  pageSize: z.number().int().min(1).max(50000).default(25),
   userId: z.string().optional(),
 });
 
@@ -105,8 +103,9 @@ export const SaleQuerySchema = z.object({
 // Purchase Schemas
 export const PurchaseItemInputSchema = z.object({
   productId: z.string().uuid(),
-  quantity: z.number().positive('Quantity must be greater than zero'),
+  quantity: z.number().positive('Quantity must be greater than zero').finite('Quantity must be a finite number'),
   purchasePrice: z.number().min(0, 'Purchase price must be positive'),
+  unitCode: z.string().trim().max(10).optional().nullable(),
   discount: z.number().min(0).optional().default(0),
   taxRate: z.number().min(0).max(100).optional().default(0),
 });
@@ -129,7 +128,7 @@ export const PurchaseQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(25),
+  pageSize: z.number().int().min(1).max(50000).default(25),
 });
 
 
@@ -137,7 +136,7 @@ export const PurchaseQuerySchema = z.object({
 export const StockAdjustmentSchema = z.object({
   productId: z.string().uuid('Invalid product ID'),
   type: z.enum(['ADJUSTMENT_IN', 'ADJUSTMENT_OUT']),
-  quantity: z.number().positive('Adjustment quantity must be greater than zero'),
+  quantity: z.number().positive('Adjustment quantity must be greater than zero').finite('Quantity must be a finite number'),
   reason: z.string().trim().min(3, 'Reason must be at least 3 characters').max(255),
   notes: z.string().trim().max(500).optional().nullable(),
   allowNegativeStockOverride: z.boolean().default(false),
@@ -150,7 +149,7 @@ export const StockLedgerQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(25),
+  pageSize: z.number().int().min(1).max(50000).default(25),
 });
 
 // Customer & Supplier Schemas
@@ -175,7 +174,7 @@ export const CustomerQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ALL'),
   hasOutstanding: z.boolean().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const RecordCustomerPaymentSchema = z.object({
@@ -193,7 +192,7 @@ export const CustomerLedgerQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const CustomerStatementQuerySchema = z.object({
@@ -228,7 +227,7 @@ export const SupplierQuerySchema = z.object({
   search: z.string().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ALL'),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const RecordSupplierPaymentSchema = z.object({
@@ -279,7 +278,7 @@ export const ExpenseQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const ProfitSummaryQuerySchema = z.object({
@@ -304,7 +303,8 @@ export const LoginSchema = z.object({
 export const SalesReturnItemInputSchema = z.object({
   saleItemId: z.string().uuid().optional(),
   productId: z.string().uuid(),
-  quantity: z.number().positive('Return quantity must be greater than zero'),
+  quantity: z.number().positive('Return quantity must be greater than zero').finite('Return quantity must be a finite number'),
+  unitCode: z.string().trim().max(10).optional().nullable(),
   reason: z.string().max(255).optional(),
 });
 
@@ -324,13 +324,14 @@ export const SalesReturnQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(25),
+  pageSize: z.number().int().min(1).max(10000).default(25),
 });
 
 export const PurchaseReturnItemInputSchema = z.object({
   purchaseItemId: z.string().uuid().optional(),
   productId: z.string().uuid(),
-  quantity: z.number().positive('Return quantity must be greater than zero'),
+  quantity: z.number().positive('Return quantity must be greater than zero').finite('Return quantity must be a finite number'),
+  unitCode: z.string().trim().max(10).optional().nullable(),
   reason: z.string().max(255).optional(),
 });
 
@@ -351,7 +352,7 @@ export const PurchaseReturnQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(25),
+  pageSize: z.number().int().min(1).max(10000).default(25),
 });
 
 // ----------------------------------------------------
@@ -381,7 +382,7 @@ export const SalesReportQuerySchema = ReportDateRangeSchema.extend({
   status: z.enum(['DRAFT', 'POSTED', 'CANCELLED', 'ALL']).optional().default('POSTED'),
   search: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const PurchaseReportQuerySchema = ReportDateRangeSchema.extend({
@@ -394,7 +395,7 @@ export const PurchaseReportQuerySchema = ReportDateRangeSchema.extend({
   status: z.enum(['DRAFT', 'POSTED', 'CANCELLED', 'ALL']).optional().default('POSTED'),
   search: z.string().optional(),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const InventoryReportQuerySchema = z.object({
@@ -402,7 +403,7 @@ export const InventoryReportQuerySchema = z.object({
   categoryId: z.string().optional(),
   stockStatus: z.enum(['ALL', 'IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK']).optional().default('ALL'),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const StockMovementQuerySchema = ReportDateRangeSchema.extend({
@@ -412,7 +413,7 @@ export const StockMovementQuerySchema = ReportDateRangeSchema.extend({
     .optional()
     .default('ALL'),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const CustomerOutstandingQuerySchema = z.object({
@@ -420,7 +421,7 @@ export const CustomerOutstandingQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ALL'),
   sortBy: z.enum(['outstanding', 'name']).optional().default('outstanding'),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 export const SupplierOutstandingQuerySchema = z.object({
@@ -428,7 +429,7 @@ export const SupplierOutstandingQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ALL'),
   sortBy: z.enum(['outstanding', 'name']).optional().default('outstanding'),
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(10000).default(50),
 });
 
 // ----------------------------------------------------

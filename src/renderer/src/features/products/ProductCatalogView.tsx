@@ -15,10 +15,15 @@ import {
   RefreshCw,
   Power,
   SlidersHorizontal,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { ProductDTO, CategoryDTO, BrandDTO, UnitDTO } from '../../../../shared/types';
 import { useAuthStore } from '../../stores/authStore';
 import { SmartAddProductModal } from './SmartAddProductModal';
+import { ProductImportModal } from './ProductImportModal';
+import { exportToCsv } from '../../utils/csvHelper';
+import { formatQuantity, formatUnitPrice } from '../../../../shared/utils/quantity';
 
 export function ProductCatalogView() {
   const session = useAuthStore((s) => s.session);
@@ -45,6 +50,8 @@ export function ProductCatalogView() {
 
   // Modals State: Product
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductDTO | null>(null);
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState<ProductDTO | null>(null);
 
@@ -121,6 +128,75 @@ export function ProductCatalogView() {
   const handleOpenEditProduct = (p: ProductDTO) => {
     setEditingProduct(p);
     setIsProductModalOpen(true);
+  };
+
+  // CSV Export Handler
+  const handleExportCsv = async () => {
+    if (!electronAPI) return;
+    setIsExporting(true);
+    try {
+      const res = await electronAPI.invoke('products:list', {
+        search: search.trim() || undefined,
+        categoryId: selectedCategory || undefined,
+        brandId: selectedBrand || undefined,
+        status: statusFilter,
+        page: 1,
+        pageSize: 10000,
+      });
+
+      const exportList: ProductDTO[] = res?.data || products;
+      if (!exportList || exportList.length === 0) {
+        setActionMessage({ type: 'warning', text: 'No products found to export.' });
+        return;
+      }
+
+      const columns = [
+        { key: 'name', label: 'Product Name' },
+        { key: 'sku', label: 'SKU' },
+        { key: 'barcode', label: 'Barcode' },
+        { key: 'salePrice', label: 'Sale Price' },
+        { key: 'purchasePrice', label: 'Cost Price' },
+        { key: 'categoryName', label: 'Category' },
+        { key: 'brandName', label: 'Brand' },
+        { key: 'unitCode', label: 'Unit' },
+        { key: 'taxRate', label: 'Tax Rate (%)' },
+        { key: 'currentStock', label: 'Current Stock' },
+        { key: 'reorderLevel', label: 'Reorder Level' },
+        { key: 'status', label: 'Status' },
+        { key: 'imageUrl', label: 'Image URL' },
+      ];
+
+      const rows = exportList.map((p) => ({
+        name: p.name,
+        sku: p.sku,
+        barcode: p.barcode || '',
+        salePrice: p.salePrice,
+        purchasePrice: p.purchasePrice,
+        categoryName: p.categoryName || '',
+        brandName: p.brandName || '',
+        unitCode: p.unitCode || '',
+        taxRate: p.taxRate,
+        currentStock: p.currentStock,
+        reorderLevel: p.reorderLevel,
+        status: p.status,
+        imageUrl: p.imageUrl || '',
+      }));
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      exportToCsv(`products_catalog_${dateStr}`, rows, columns);
+
+      setActionMessage({
+        type: 'success',
+        text: `Exported ${rows.length} products to CSV successfully.`,
+      });
+    } catch (err: any) {
+      setActionMessage({
+        type: 'error',
+        text: `Failed to export CSV: ${err?.message || 'Unknown error'}`,
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Quick Product Status Toggle
@@ -388,13 +464,34 @@ export function ProductCatalogView() {
 
         <div className="flex items-center space-x-2">
           {activeTab === 'products' ? (
-            <button
-              onClick={handleOpenAddProduct}
-              className="flex items-center space-x-2 bg-primary hover:bg-primary-hover text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold shadow-md shadow-primary/20 transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add New Product</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleExportCsv}
+                disabled={isExporting}
+                title="Export products to CSV spreadsheet"
+                className="flex items-center space-x-1.5 bg-surface-elevated hover:bg-surface-muted text-foreground px-3 py-2 rounded-lg text-xs font-semibold border border-border transition-all shadow-sm disabled:opacity-50"
+              >
+                {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                <span>Export CSV</span>
+              </button>
+
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                title="Bulk import products from CSV spreadsheet"
+                className="flex items-center space-x-1.5 bg-surface-elevated hover:bg-surface-muted text-foreground px-3 py-2 rounded-lg text-xs font-semibold border border-border transition-all shadow-sm"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import CSV</span>
+              </button>
+
+              <button
+                onClick={handleOpenAddProduct}
+                className="flex items-center space-x-2 bg-primary hover:bg-primary-hover text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold shadow-md shadow-primary/20 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add New Product</span>
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => handleOpenAddMeta(activeTab === 'categories' ? 'category' : activeTab === 'brands' ? 'brand' : 'unit')}
@@ -522,8 +619,23 @@ export function ProductCatalogView() {
                     return (
                       <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-foreground">{p.name}</div>
-                          <div className="text-[11px] font-mono text-muted-foreground">{p.sku}</div>
+                          <div className="flex items-center gap-3">
+                            {p.imageUrl ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.name}
+                                className="w-10 h-10 rounded-lg object-cover border border-border shrink-0 bg-surface-elevated"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg border border-border/70 bg-surface-elevated/40 flex items-center justify-center shrink-0 text-muted-foreground">
+                                <Package className="w-4 h-4 opacity-40" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-semibold text-foreground truncate max-w-[200px]">{p.name}</div>
+                              <div className="text-[11px] font-mono text-muted-foreground">{p.sku}</div>
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 px-4 font-mono text-foreground">
                           {p.barcode ? (
@@ -539,10 +651,10 @@ export function ProductCatalogView() {
                           <div className="text-[11px] text-muted-foreground">{p.brandName || '—'}</div>
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-foreground">
-                          {currencySymbol}{p.purchasePrice.toFixed(2)}
+                          {formatUnitPrice(p.purchasePrice, p.unitCode, currencySymbol)}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-semibold text-primary">
-                          {currencySymbol}{p.salePrice.toFixed(2)}
+                          {formatUnitPrice(p.salePrice, p.unitCode, currencySymbol)}
                         </td>
                         <td className="py-3 px-4 text-right font-mono">
                           <span
@@ -552,7 +664,7 @@ export function ProductCatalogView() {
                                 : 'text-foreground'
                             }`}
                           >
-                            {p.currentStock} {p.unitCode}
+                            {formatQuantity(p.currentStock, p.unitCode, p.precision)}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-emerald-400">
@@ -937,6 +1049,16 @@ export function ProductCatalogView() {
               ? `Product "${product.name}" updated successfully.`
               : `Product "${product.name}" created successfully.`,
           });
+          loadProducts();
+          loadDependencies();
+        }}
+      />
+
+      <ProductImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        units={units}
+        onImportComplete={() => {
           loadProducts();
           loadDependencies();
         }}

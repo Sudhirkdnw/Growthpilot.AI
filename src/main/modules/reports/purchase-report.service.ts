@@ -6,9 +6,10 @@ import {
   PurchasesBySupplierDTO,
   PurchaseReturnReportDTO,
 } from '../../../shared/types';
+import { roundQuantity, roundMoney } from '../../../shared/utils/quantity';
 
 function n(v: any): number {
-  return Math.round(Number(v || 0) * 100) / 100;
+  return roundMoney(Number(v || 0));
 }
 
 /**
@@ -197,31 +198,31 @@ export class PurchaseReportService {
         });
       }
       const row = map.get(pid)!;
-      row.quantityPurchased += Number(item.quantity);
-      row.grossPurchaseAmount = Math.round((row.grossPurchaseAmount + Number(item.lineTotal)) * 100) / 100;
+      row.quantityPurchased = roundQuantity(row.quantityPurchased + Number(item.quantity), 4);
+      row.grossPurchaseAmount = roundMoney(row.grossPurchaseAmount + Number(item.lineTotal));
     }
 
     for (const ret of returnItems) {
       if (map.has(ret.productId)) {
         const row = map.get(ret.productId)!;
-        row.returnQty += Number(ret.quantity);
-        row.returnValue = Math.round((row.returnValue + Number(ret.lineTotal)) * 100) / 100;
+        row.returnQty = roundQuantity(row.returnQty + Number(ret.quantity), 4);
+        row.returnValue = roundMoney(row.returnValue + Number(ret.lineTotal));
       }
     }
 
     let totals = { quantityPurchased: 0, grossPurchaseAmount: 0, returnValue: 0, netPurchaseAmount: 0 };
     const data = Array.from(map.values()).map((row) => {
-      const netQuantity = Math.max(0, row.quantityPurchased - row.returnQty);
-      const netPurchaseAmount = Math.max(0, Math.round((row.grossPurchaseAmount - row.returnValue) * 100) / 100);
-      totals.quantityPurchased += row.quantityPurchased;
-      totals.grossPurchaseAmount = Math.round((totals.grossPurchaseAmount + row.grossPurchaseAmount) * 100) / 100;
-      totals.returnValue = Math.round((totals.returnValue + row.returnValue) * 100) / 100;
-      totals.netPurchaseAmount = Math.round((totals.netPurchaseAmount + netPurchaseAmount) * 100) / 100;
+      const netQuantity = Math.max(0, roundQuantity(row.quantityPurchased - row.returnQty, 4));
+      const netPurchaseAmount = Math.max(0, roundMoney(row.grossPurchaseAmount - row.returnValue));
+      totals.quantityPurchased = roundQuantity(totals.quantityPurchased + row.quantityPurchased, 4);
+      totals.grossPurchaseAmount = roundMoney(totals.grossPurchaseAmount + row.grossPurchaseAmount);
+      totals.returnValue = roundMoney(totals.returnValue + row.returnValue);
+      totals.netPurchaseAmount = roundMoney(totals.netPurchaseAmount + netPurchaseAmount);
       return {
         ...row,
-        quantityPurchased: Math.round(row.quantityPurchased * 1000) / 1000,
-        returnQty: Math.round(row.returnQty * 1000) / 1000,
-        netQuantity: Math.round(netQuantity * 1000) / 1000,
+        quantityPurchased: roundQuantity(row.quantityPurchased, 4),
+        returnQty: roundQuantity(row.returnQty, 4),
+        netQuantity: roundQuantity(netQuantity, 4),
         netPurchaseAmount,
       };
     });

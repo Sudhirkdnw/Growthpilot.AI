@@ -7,9 +7,10 @@ import {
   SalesByPaymentMethodDTO,
   SalesReturnReportDTO,
 } from '../../../shared/types';
+import { roundQuantity, roundMoney } from '../../../shared/utils/quantity';
 
 function n(v: any): number {
-  return Math.round(Number(v || 0) * 100) / 100;
+  return roundMoney(Number(v || 0));
 }
 
 /**
@@ -257,12 +258,12 @@ export class SalesReportService {
       const grossProfit = Math.round((netRevenue - netCogs) * 100) / 100;
       const grossMarginPercent = netRevenue > 0 ? Math.round((grossProfit / netRevenue) * 10000) / 100 : 0;
 
-      totals.quantitySold += row.quantitySold;
-      totals.grossRevenue = Math.round((totals.grossRevenue + row.grossRevenue) * 100) / 100;
-      totals.salesReturnValue = Math.round((totals.salesReturnValue + row.salesReturnValue) * 100) / 100;
-      totals.netRevenue = Math.round((totals.netRevenue + netRevenue) * 100) / 100;
-      totals.historicalCogs = Math.round((totals.historicalCogs + netCogs) * 100) / 100;
-      totals.grossProfit = Math.round((totals.grossProfit + grossProfit) * 100) / 100;
+      totals.quantitySold = roundQuantity(totals.quantitySold + row.quantitySold, 4);
+      totals.grossRevenue = roundMoney(totals.grossRevenue + row.grossRevenue);
+      totals.salesReturnValue = roundMoney(totals.salesReturnValue + row.salesReturnValue);
+      totals.netRevenue = roundMoney(totals.netRevenue + netRevenue);
+      totals.historicalCogs = roundMoney(totals.historicalCogs + netCogs);
+      totals.grossProfit = roundMoney(totals.grossProfit + grossProfit);
 
       return {
         productId: row.productId,
@@ -271,13 +272,13 @@ export class SalesReportService {
         barcode: row.barcode,
         categoryName: row.categoryName,
         unitCode: row.unitCode,
-        quantitySold: Math.round(row.quantitySold * 1000) / 1000,
-        grossRevenue: Math.round(row.grossRevenue * 100) / 100,
-        totalDiscount: Math.round(row.totalDiscount * 100) / 100,
-        totalTax: Math.round(row.totalTax * 100) / 100,
-        salesReturnQty: Math.round(row.salesReturnQty * 1000) / 1000,
-        salesReturnValue: Math.round(row.salesReturnValue * 100) / 100,
-        netQuantity: Math.round(netQuantity * 1000) / 1000,
+        quantitySold: roundQuantity(row.quantitySold, 4),
+        grossRevenue: roundMoney(row.grossRevenue),
+        totalDiscount: roundMoney(row.totalDiscount),
+        totalTax: roundMoney(row.totalTax),
+        salesReturnQty: roundQuantity(row.salesReturnQty, 4),
+        salesReturnValue: roundMoney(row.salesReturnValue),
+        netQuantity: roundQuantity(netQuantity, 4),
         netRevenue,
         historicalCogs: netCogs,
         grossProfit,

@@ -1,4 +1,5 @@
 import { InvoiceDocumentDTO } from '../../../../shared/types';
+import { formatQuantity } from '../../../../shared/utils/quantity';
 
 /**
  * Escapes HTML characters safely
@@ -429,9 +430,9 @@ export function renderA4InvoiceHtml(doc: InvoiceDocumentDTO): string {
               <div class="font-semibold">${escapeHtml(it.name)}</div>
             </td>
             <td class="text-center" style="font-size: 9px; color: #64748b;">${escapeHtml(it.sku)}</td>
-            <td class="text-center font-bold">${it.quantity}</td>
+            <td class="text-center font-bold">${formatQuantity(it.quantity, it.unitCode)}</td>
             <td class="text-center" style="font-size: 9px; color: #64748b;">${escapeHtml(it.unitCode)}</td>
-            <td class="text-right">${doc.currencySymbol}${it.unitPrice.toFixed(2)}</td>
+            <td class="text-right">${doc.currencySymbol}${it.unitPrice.toFixed(2)} / ${escapeHtml(it.unitCode || 'unit')}</td>
             <td class="text-right">${it.discount > 0 ? `-${doc.currencySymbol}${it.discount.toFixed(2)}` : '-'}</td>
             <td class="text-right" style="font-size: 9px;">
               ${it.taxAmount > 0 ? `${doc.currencySymbol}${it.taxAmount.toFixed(2)}<br><span style="color:#64748b;">(${it.taxRate}%)</span>` : '-'}
@@ -708,10 +709,11 @@ export function renderThermal80mmHtml(doc: InvoiceDocumentDTO): string {
         <tr>
           <td>
             <div class="item-name">${escapeHtml(it.name)}</div>
+            <div class="item-subtext">${formatQuantity(it.quantity, it.unitCode)} × ${doc.currencySymbol}${it.unitPrice.toFixed(2)}/${escapeHtml(it.unitCode || 'unit')}</div>
             ${it.discount > 0 ? `<div class="item-subtext">Disc: -${doc.currencySymbol}${it.discount.toFixed(2)}</div>` : ''}
             ${it.taxAmount > 0 ? `<div class="item-subtext">Tax: ${doc.currencySymbol}${it.taxAmount.toFixed(2)} (${it.taxRate}%)</div>` : ''}
           </td>
-          <td style="text-align: center; font-weight: bold;">${it.quantity}</td>
+          <td style="text-align: center; font-weight: bold;">${formatQuantity(it.quantity, it.unitCode)}</td>
           <td style="text-align: right;">${it.unitPrice.toFixed(2)}</td>
           <td style="text-align: right; font-weight: bold;">${it.lineTotal.toFixed(2)}</td>
         </tr>`
@@ -921,9 +923,9 @@ export function renderThermal58mmHtml(doc: InvoiceDocumentDTO): string {
         <tr>
           <td>
             <div class="item-name">${escapeHtml(it.name)}</div>
-            <div style="font-size: 7.5px; color: #444;">@${it.unitPrice.toFixed(2)}${it.discount > 0 ? ` (D:-${it.discount.toFixed(2)})` : ''}</div>
+            <div style="font-size: 7.5px; color: #444;">${formatQuantity(it.quantity, it.unitCode)} × ${doc.currencySymbol}${it.unitPrice.toFixed(2)}/${escapeHtml(it.unitCode || 'unit')}${it.discount > 0 ? ` (D:-${it.discount.toFixed(2)})` : ''}</div>
           </td>
-          <td style="text-align: center; font-weight: bold;">${it.quantity}</td>
+          <td style="text-align: center; font-weight: bold;">${formatQuantity(it.quantity, it.unitCode)}</td>
           <td style="text-align: right; font-weight: bold;">${doc.currencySymbol}${it.lineTotal.toFixed(2)}</td>
         </tr>`
         )

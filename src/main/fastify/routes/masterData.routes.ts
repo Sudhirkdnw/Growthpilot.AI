@@ -136,16 +136,21 @@ export const masterDataRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
   // --------------------------------------------------------------------------
   // PRODUCTS
   // --------------------------------------------------------------------------
-  fastify.get('/api/products', async (request) => {
+  fastify.get('/api/products', async (request, reply) => {
     const q = request.query as any;
-    return await productService.listProducts({
-      search: q?.search,
-      categoryId: q?.categoryId,
-      brandId: q?.brandId,
-      status: q?.status || 'ACTIVE',
-      page: q?.page ? Number(q.page) : 1,
-      pageSize: q?.pageSize ? Number(q.pageSize) : 25,
-    });
+    try {
+      return await productService.listProducts({
+        search: q?.search,
+        categoryId: q?.categoryId,
+        brandId: q?.brandId,
+        status: q?.status || 'ACTIVE',
+        page: q?.page ? Number(q.page) : 1,
+        pageSize: q?.pageSize ? Number(q.pageSize) : 25,
+      });
+    } catch (err: any) {
+      reply.status(400);
+      return { error: err?.message || 'Failed to list products', data: [], total: 0, page: 1, pageSize: 25, totalPages: 1 };
+    }
   });
 
   fastify.get('/api/products/:id', async (request, reply) => {
@@ -193,6 +198,18 @@ export const masterDataRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
     } catch (err: any) {
       reply.status(403);
       return { error: err?.message || 'Failed to create product' };
+    }
+  });
+
+  fastify.post('/api/products/import-csv', async (request, reply) => {
+    const token = (request.headers['authorization'] || (request.body as any)?.token) as string;
+    try {
+      const session = await AuthGuard.requirePermission(token, 'products.import');
+      const { products, options } = request.body as any;
+      return await productService.importProducts(products || [], options || {}, session.user.id);
+    } catch (err: any) {
+      reply.status(403);
+      return { error: err?.message || 'Failed to import products' };
     }
   });
 

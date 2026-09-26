@@ -8,6 +8,7 @@ import {
   CreateUnitSchema,
   UpdateUnitSchema,
 } from '../../../shared/schemas';
+import { getUnitMetadata } from '../../../shared/utils/quantity';
 import { z } from 'zod';
 
 export class CategoryBrandUnitService {
@@ -258,7 +259,7 @@ export class CategoryBrandUnitService {
     }));
   }
 
-  async createUnit(input: z.infer<typeof CreateUnitSchema>, userId?: string) {
+  async createUnit(input: z.input<typeof CreateUnitSchema>, userId?: string) {
     const validated = CreateUnitSchema.parse(input);
     const prisma = getPrismaClient();
 
@@ -269,11 +270,22 @@ export class CategoryBrandUnitService {
       throw new Error(`Unit with code "${validated.shortCode}" already exists`);
     }
 
+    const meta = getUnitMetadata(validated.shortCode);
+    const category = validated.category || meta.category;
+    const allowDecimal = validated.allowDecimal !== undefined ? validated.allowDecimal : meta.allowDecimal;
+    const precision = validated.precision !== undefined ? validated.precision : meta.precision;
+    const conversionFactor = validated.conversionFactor !== undefined ? validated.conversionFactor : meta.conversionFactor;
+    const baseUnitCode = validated.baseUnitCode !== undefined ? validated.baseUnitCode : meta.baseUnitCode;
+
     const unit = await prisma.unit.create({
       data: {
         name: validated.name,
         shortCode: validated.shortCode,
-        allowDecimal: validated.allowDecimal,
+        category,
+        allowDecimal,
+        precision,
+        conversionFactor,
+        baseUnitCode: baseUnitCode || null,
         status: 'ACTIVE',
       },
     });
@@ -310,7 +322,11 @@ export class CategoryBrandUnitService {
       data: {
         ...(validated.name ? { name: validated.name } : {}),
         ...(validated.shortCode ? { shortCode: validated.shortCode } : {}),
+        ...(validated.category ? { category: validated.category } : {}),
         ...(validated.allowDecimal !== undefined ? { allowDecimal: validated.allowDecimal } : {}),
+        ...(validated.precision !== undefined ? { precision: validated.precision } : {}),
+        ...(validated.conversionFactor !== undefined ? { conversionFactor: validated.conversionFactor } : {}),
+        ...(validated.baseUnitCode !== undefined ? { baseUnitCode: validated.baseUnitCode } : {}),
         ...(validated.status ? { status: validated.status } : {}),
       },
     });

@@ -10,6 +10,13 @@ import {
   SaleDetailDTO,
   PaginatedResult,
 } from '../../../shared/types';
+import {
+  roundQuantity,
+  roundMoney,
+  validateQuantity,
+  normalizeQuantity,
+  compareQuantities,
+} from '../../../shared/utils/quantity';
 
 export class SaleService {
   private get prisma() {
@@ -37,15 +44,15 @@ export class SaleService {
     let totalTaxAmount = 0;
 
     const processedItems = items.map((item) => {
-      const quantity = Number(item.quantity);
-      const sellingPrice = Number(item.sellingPrice);
-      const discount = Number(item.discount || 0);
+      const quantity = roundQuantity(Number(item.quantity), 4);
+      const sellingPrice = roundMoney(Number(item.sellingPrice));
+      const discount = roundMoney(Number(item.discount || 0));
       const taxRate = Number(item.taxRate || 0);
 
-      const lineGross = quantity * sellingPrice;
-      const taxable = Math.max(0, lineGross - discount);
-      const lineTax = Math.round(taxable * (taxRate / 100) * 100) / 100;
-      const lineTotal = Math.round((taxable + lineTax) * 100) / 100;
+      const lineGross = roundMoney(quantity * sellingPrice);
+      const taxable = Math.max(0, roundMoney(lineGross - discount));
+      const lineTax = roundMoney(taxable * (taxRate / 100));
+      const lineTotal = roundMoney(taxable + lineTax);
 
       subtotal += taxable;
       totalItemDiscounts += discount;
@@ -62,16 +69,16 @@ export class SaleService {
       };
     });
 
-    const netSubtotal = Math.round(subtotal * 100) / 100;
-    const finalDiscount = Math.round((totalItemDiscounts + Number(globalDiscount || 0)) * 100) / 100;
-    const finalTax = Math.round((totalTaxAmount + Number(orderTax || 0)) * 100) / 100;
-    const grandTotal = Math.max(0, Math.round((netSubtotal + finalTax - Number(globalDiscount || 0)) * 100) / 100);
+    const netSubtotal = roundMoney(subtotal);
+    const finalDiscount = roundMoney(totalItemDiscounts + Number(globalDiscount || 0));
+    const finalTax = roundMoney(totalTaxAmount + Number(orderTax || 0));
+    const grandTotal = Math.max(0, roundMoney(netSubtotal + finalTax - Number(globalDiscount || 0)));
 
-    const paid = Math.round(Number(paidAmount || 0) * 100) / 100;
-    const dueAmount = Math.max(0, Math.round((grandTotal - paid) * 100) / 100);
+    const paid = roundMoney(Number(paidAmount || 0));
+    const dueAmount = Math.max(0, roundMoney(grandTotal - paid));
     const changeAmount =
       paymentMethod === 'CASH' && paid > grandTotal
-        ? Math.round((paid - grandTotal) * 100) / 100
+        ? roundMoney(paid - grandTotal)
         : 0;
 
     return {
@@ -100,6 +107,7 @@ export class SaleService {
     const productIds = validated.items.map((i) => i.productId);
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
+      include: { unit: true },
     });
 
     if (products.length !== productIds.length) {
@@ -108,7 +116,7 @@ export class SaleService {
 
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // 2. Validate product status & negative stock policy
+    // 2. Validate product status, unit compatibility & negative stock policy
     const settings = await settingsService.getAppSettings();
     const stockPolicy = settings.pos?.negativeStockPolicy || 'BLOCK';
 
@@ -118,8 +126,27 @@ export class SaleService {
         throw new Error(`Product "${product.name}" is inactive and cannot be sold.`);
       }
 
-      const currentStock = Number(product.currentStock);
-      if (item.quantity > currentStock) {
+      // Unit conversion if compatible unitCode provided
+      if (item.unitCode && product.unit) {
+        try {
+          item.quantity = normalizeQuantity(item.quantity, item.unitCode, product.unit.shortCode);
+        } catch (err: any) {
+          throw new Error(`Unit validation failed for "${product.name}": ${err?.message}`);
+        }
+      }
+
+      // Validate decimal permissions & precision
+      const qVal = validateQuantity(item.quantity, {
+        allowDecimal: product.unit?.allowDecimal,
+        precision: product.unit?.precision,
+        unitCode: product.unit?.shortCode,
+      });
+      if (!qVal.valid) {
+        throw new Error(`Invalid quantity for "${product.name}": ${qVal.error}`);
+      }
+
+      const currentStock = roundQuantity(Number(product.currentStock), 4);
+      if (compareQuantities(item.quantity, currentStock) > 0) {
         if (stockPolicy === 'BLOCK') {
           throw new Error(
             `Negative Stock Policy Violation: Insufficient stock for "${product.name}". Available: ${currentStock}, Requested: ${item.quantity}. Policy blocks negative stock.`
@@ -171,6 +198,27 @@ export class SaleService {
 
     // 5. Atomic Execution via Write Queue
     return await executeWriteTransaction(async (tx) => {
+      // Re-verify stock inside write transaction lock to eliminate concurrency race conditions
+      for (const item of calc.items) {
+        const prod = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { name: true, currentStock: true },
+        });
+        if (!prod) throw new Error(`Product not found: ${item.productId}`);
+        const currentStockInTx = roundQuantity(Number(prod.currentStock), 4);
+        if (compareQuantities(item.quantity, currentStockInTx) > 0) {
+          if (stockPolicy === 'BLOCK') {
+            throw new Error(
+              `Negative Stock Policy Violation: Insufficient stock for "${prod.name}". Available: ${currentStockInTx}, Requested: ${item.quantity}. Policy blocks negative stock.`
+            );
+          } else if (stockPolicy === 'ALLOW_WITH_WARNING' && !validated.allowNegativeStockOverride) {
+            throw new Error(
+              `Negative Stock Warning: Sale will reduce stock for "${prod.name}" below zero (${currentStockInTx - item.quantity} units). Please confirm override to proceed.`
+            );
+          }
+        }
+      }
+
       // Generate safe unique invoice number
       const invoiceNumber = await invoiceSequenceService.getNextInvoiceNumber(tx, 'SALE_INVOICE');
 

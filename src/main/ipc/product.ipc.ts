@@ -101,5 +101,9 @@ export function registerProductIpc() {
   ipcMain.handle('products:deactivate', async (_, { id, token }) => {
     return await dispatchFastify('PUT', `/api/products/${id}`, { status: 'INACTIVE', token }, { authorization: token });
   });
+
+  ipcMain.handle('products:importCsv', async (_, { products, options, token }) => {
+    return await dispatchFastify('POST', '/api/products/import-csv', { products, options, token }, { authorization: token });
+  });
 }
 

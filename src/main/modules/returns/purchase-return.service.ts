@@ -12,6 +12,7 @@ import {
   PurchaseReturnDetailDTO,
   PaginatedResult,
 } from '../../../shared/types';
+import { roundQuantity, compareQuantities } from '../../../shared/utils/quantity';
 
 export class PurchaseReturnService {
   private get prisma() {
@@ -181,12 +182,15 @@ export class PurchaseReturnService {
           throw new Error(`Product ${reqItem.productId} was not part of original purchase ${purchase.purchaseNumber}.`);
         }
 
-        const purchasedQty = Number(origItem.quantity);
-        const prevReturned = (origItem.id && previouslyReturnedByItemId.get(origItem.id)) ||
-                             previouslyReturnedByProductId.get(origItem.productId) || 0;
-        const returnableQty = Math.max(0, purchasedQty - prevReturned);
+        const purchasedQty = roundQuantity(Number(origItem.quantity), 4);
+        const prevReturned = roundQuantity(
+          (origItem.id && previouslyReturnedByItemId.get(origItem.id)) ||
+          previouslyReturnedByProductId.get(origItem.productId) || 0,
+          4
+        );
+        const returnableQty = roundQuantity(Math.max(0, purchasedQty - prevReturned), 4);
 
-        if (returnQty > returnableQty) {
+        if (compareQuantities(returnQty, returnableQty) > 0) {
           throw new Error(
             `Cannot return more than available quantity. Requested ${returnQty} for "${origItem.product.name}" exceeds remaining returnable quantity (${returnableQty}).`
           );
@@ -288,7 +292,7 @@ export class PurchaseReturnService {
           productId: item.productId,
           transactionType: 'RETURN_OUT',
           referenceId: purchaseReturn.id,
-          quantityChange: -item.quantity,
+          quantityChange: -roundQuantity(item.quantity, 4),
           notes: `Purchase Return ${returnNumber} for Purchase ${purchase.purchaseNumber}`,
         });
       }

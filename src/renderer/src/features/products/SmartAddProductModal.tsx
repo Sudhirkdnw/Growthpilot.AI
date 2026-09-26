@@ -17,6 +17,10 @@ import {
   Hash,
   DollarSign,
   TrendingUp,
+  Image as ImageIcon,
+  Upload,
+  Link as LinkIcon,
+  Trash2,
 } from 'lucide-react';
 import { ProductDTO, CategoryDTO, BrandDTO, UnitDTO } from '../../../../shared/types';
 import { useAuthStore } from '../../stores/authStore';
@@ -55,12 +59,15 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
   const [name, setName] = useState('');
   const [salePrice, setSalePrice] = useState<string>('');
   const [unitId, setUnitId] = useState<string>('');
+  const [allowSellByAmount, setAllowSellByAmount] = useState<boolean>(false);
   const [categoryId, setCategoryId] = useState<string>('');
   const [brandId, setBrandId] = useState<string>('');
 
   // Advanced / Collapsible State
   const [isMoreDetailsOpen, setIsMoreDetailsOpen] = useState(false);
   const [sku, setSku] = useState('');
+  const [isCustomSku, setIsCustomSku] = useState(false);
+  const [previewSku, setPreviewSku] = useState('SKU-Auto');
   const [barcode, setBarcode] = useState('');
   const [purchasePrice, setPurchasePrice] = useState<string>('');
   const [mrp, setMrp] = useState<string>('');
@@ -68,6 +75,10 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
   const [openingStock, setOpeningStock] = useState<string>('0');
   const [reorderLevel, setReorderLevel] = useState<string>('10');
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [imageUrl, setImageUrl] = useState<string>('');
+  const [imageMode, setImageMode] = useState<'upload' | 'url'>('upload');
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // UI / Feedback State
   const [submitting, setSubmitting] = useState(false);
@@ -131,6 +142,7 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         setName(editingProduct.name);
         setSalePrice(String(editingProduct.salePrice || ''));
         setUnitId(editingProduct.unitId);
+        setAllowSellByAmount(editingProduct.allowSellByAmount ?? false);
         setCategoryId(editingProduct.categoryId || '');
         setBrandId(editingProduct.brandId || '');
         setSku(editingProduct.sku);
@@ -142,6 +154,10 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         setOpeningStock(String(editingProduct.openingStock || 0));
         setReorderLevel(String(editingProduct.reorderLevel || 10));
         setStatus(editingProduct.status);
+        const pImg = editingProduct.imageUrl || '';
+        setImageUrl(pImg);
+        setImageMode(pImg.startsWith('http') ? 'url' : 'upload');
+        setImageError(null);
         setIsMoreDetailsOpen(true);
       } else {
         setName('');
@@ -150,9 +166,16 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         setMrp('');
         setBarcode('');
         setSku('');
+        setAllowSellByAmount(false);
         setOpeningStock('0');
         setReorderLevel('10');
         setStatus('ACTIVE');
+        setImageUrl('');
+        setImageMode('upload');
+        setImageError(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
 
         if (!preserveContext) {
           setUnitId(getSmartDefaultUnitId());
@@ -172,6 +195,72 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
     },
     [editingProduct, getSmartDefaultUnitId, fetchNextSkuPreview]
   );
+
+  // ----------------------------------------------------
+  // Image Upload & Compress Handler
+  // ----------------------------------------------------
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageError(null);
+
+    if (!file.type.startsWith('image/')) {
+      setImageError('Please select a valid image file (PNG, JPG, WEBP, etc.)');
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setImageError('Image file is too large (max 8MB)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const img = new window.Image();
+      img.onload = () => {
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setImageUrl(compressed);
+        } else {
+          setImageUrl(dataUrl);
+        }
+      };
+      img.onerror = () => {
+        setImageUrl(dataUrl);
+      };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => {
+      setImageError('Failed to read image file');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setImageUrl('');
+    setImageError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -276,14 +365,27 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
       return;
     }
 
-    if (!sku.trim()) {
-      setErrorMessage('SKU (Unique Code) is required.');
-      return;
+    let finalSku = sku.trim();
+    if (!finalSku) {
+      try {
+        const res = await electronAPI.invoke('products:getNextSku');
+        finalSku = res?.sku || `SKU-${Date.now().toString(36).toUpperCase()}`;
+      } catch {
+        finalSku = `SKU-${Date.now().toString(36).toUpperCase()}`;
+      }
     }
 
-    if (!barcode.trim()) {
-      setErrorMessage('Barcode is required.');
-      return;
+    let finalBarcode = barcode.trim();
+    if (!finalBarcode) {
+      try {
+        const res = await electronAPI.invoke(
+          'products:generateBarcode',
+          settings?.numbering?.inStoreBarcodePrefix || '21'
+        );
+        finalBarcode = res?.barcode || `BC-${Date.now().toString(36).toUpperCase()}`;
+      } catch {
+        finalBarcode = `BC-${Date.now().toString(36).toUpperCase()}`;
+      }
     }
 
     const numericSalePrice = parseFloat(salePrice);
@@ -313,8 +415,8 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
     try {
       const payload = {
         name: name.trim(),
-        sku: sku.trim(),
-        barcode: barcode.trim(),
+        sku: finalSku,
+        barcode: finalBarcode,
         categoryId: categoryId || null,
         brandId: brandId || null,
         unitId: selectedUnit,
@@ -324,6 +426,8 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         openingStock: openingStock ? parseFloat(openingStock) || 0 : 0,
         reorderLevel: reorderLevel ? parseFloat(reorderLevel) || 10 : 10,
         status,
+        imageUrl: imageUrl.trim() || null,
+        allowSellByAmount: Boolean(allowSellByAmount),
       };
 
       if (editingProduct) {
@@ -532,16 +636,38 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
                     </option>
                   ))}
                 </select>
+                {(() => {
+                  const selU = units.find((u) => u.id === (unitId || getSmartDefaultUnitId()));
+                  const isDecimal = selU && (selU.category !== 'COUNT' || (selU.precision ?? 0) > 0);
+                  return (
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                      <span className={`font-medium ${isDecimal ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+                        {isDecimal ? `⚡ Decimal allowed (${selU?.precision ?? 3} digits)` : '📦 Count unit (integer only)'}
+                      </span>
+                      {isDecimal && (
+                        <label className="flex items-center space-x-1.5 cursor-pointer text-foreground hover:text-primary transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={allowSellByAmount}
+                            onChange={(e) => setAllowSellByAmount(e.target.checked)}
+                            className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5"
+                          />
+                          <span>Allow Sell by ₹ Amount</span>
+                        </label>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
-            {/* SKU & Barcode — Required */}
+            {/* SKU & Barcode */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* SKU */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    SKU (Unique Code) <span className="text-primary">*</span>
+                    SKU (Unique Code)
                   </label>
                   <button
                     type="button"
@@ -556,10 +682,9 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
                 </div>
                 <input
                   type="text"
-                  required
                   value={sku}
                   onChange={(e) => setSku(e.target.value.toUpperCase())}
-                  placeholder="e.g. AMUL-MILK-1L"
+                  placeholder="Auto-generated if left blank"
                   className="w-full bg-input border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
@@ -568,7 +693,7 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Barcode <span className="text-primary">*</span>
+                    Barcode
                   </label>
                   <button
                     type="button"
@@ -582,10 +707,9 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
                 <div className="relative">
                   <input
                     type="text"
-                    required
                     value={barcode}
                     onChange={(e) => setBarcode(e.target.value)}
-                    placeholder="Scan or enter barcode"
+                    placeholder="Auto-generated if left blank"
                     className="w-full bg-input border border-border rounded-xl pl-3 pr-8 py-2.5 text-xs font-mono text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                   <Barcode className="w-4 h-4 text-muted-foreground absolute right-2.5 top-2.5 pointer-events-none opacity-60" />
@@ -716,7 +840,7 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
               className="w-full flex items-center justify-between py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition group select-none"
             >
               <div className="flex items-center space-x-2">
-                <span>More Product Details (Cost, Tax, Stock)</span>
+                <span>More Product Details (Image, Cost, Tax, Stock)</span>
                 {!isMoreDetailsOpen && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated text-muted-foreground font-mono">
                     Optional
@@ -732,6 +856,152 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
 
             {isMoreDetailsOpen && (
               <div className="pt-4 space-y-4 animate-in fade-in duration-200">
+                {/* Product Image Section */}
+                <div className="p-3.5 bg-surface-elevated/40 border border-border rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-primary" />
+                      <span>Product Image</span>
+                      <span className="text-[10px] lowercase text-muted-foreground font-normal">(optional)</span>
+                    </label>
+
+                    {/* Mode Selector Toggle: Upload vs Link */}
+                    <div className="flex items-center bg-input border border-border rounded-lg p-0.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => { setImageMode('upload'); setImageError(null); }}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition font-medium ${
+                          imageMode === 'upload'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Upload File</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setImageMode('url'); setImageError(null); }}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition font-medium ${
+                          imageMode === 'url'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <LinkIcon className="w-3 h-3" />
+                        <span>Image Link</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content based on Mode */}
+                  {imageMode === 'upload' ? (
+                    <div>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      {!imageUrl ? (
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          className="border-2 border-dashed border-border hover:border-primary/60 bg-surface-elevated/30 hover:bg-surface-elevated/60 transition-colors rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer group"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <span className="text-xs font-semibold text-foreground">Click to upload product image</span>
+                          <span className="text-[10px] text-muted-foreground mt-0.5">Supports PNG, JPG, JPEG, WEBP (Max 8MB)</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3 p-2.5 bg-surface-elevated/70 border border-border rounded-xl">
+                          <img
+                            src={imageUrl}
+                            alt="Product Preview"
+                            onError={() => setImageError('Failed to display uploaded image')}
+                            className="w-14 h-14 rounded-lg object-cover border border-border bg-black/20 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold text-foreground block truncate">Image attached</span>
+                            <span className="text-[10px] text-muted-foreground block truncate font-mono">
+                              {imageUrl.startsWith('data:') ? 'Local file attached' : imageUrl}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-surface hover:bg-surface-hover border border-border text-foreground transition"
+                            >
+                              Change
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRemoveImage}
+                              className="p-1.5 text-xs text-rose-500 hover:bg-rose-500/10 rounded-lg transition"
+                              title="Remove image"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <LinkIcon className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="url"
+                            value={imageUrl.startsWith('data:') ? '' : imageUrl}
+                            onChange={(e) => {
+                              setImageUrl(e.target.value);
+                              setImageError(null);
+                            }}
+                            placeholder="https://example.com/product-image.jpg"
+                            className="w-full bg-input border border-border rounded-xl pl-8 pr-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary placeholder:text-muted-foreground"
+                          />
+                        </div>
+                        {imageUrl && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveImage}
+                            className="p-2 text-rose-500 hover:bg-rose-500/10 border border-border rounded-xl transition"
+                            title="Clear image link"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {imageUrl && !imageUrl.startsWith('data:') && (
+                        <div className="flex items-center gap-3 p-2.5 bg-surface-elevated/70 border border-border rounded-xl">
+                          <img
+                            src={imageUrl}
+                            alt="Link Preview"
+                            onError={() => setImageError('Could not load image from this URL. Please verify the link.')}
+                            className="w-14 h-14 rounded-lg object-cover border border-border bg-black/20 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0 text-xs">
+                            <span className="font-semibold text-foreground block truncate">Link Preview</span>
+                            <span className="text-[10px] text-muted-foreground truncate block font-mono">{imageUrl}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {imageError && (
+                    <div className="text-[11px] text-rose-500 flex items-center gap-1.5 pt-0.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{imageError}</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Cost Price, MRP, Tax Rate */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {/* Cost Price */}
@@ -812,21 +1082,36 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
 
                 {/* Opening Stock & Reorder Alert */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Opening Stock */}
+                  {/* Opening / Current Stock */}
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                      Opening Stock {editingProduct && '(Locked)'}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      disabled={Boolean(editingProduct)}
-                      value={openingStock}
-                      onChange={(e) => setOpeningStock(e.target.value)}
-                      placeholder="0"
-                      className="w-full bg-input disabled:opacity-50 border border-border rounded-xl px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary"
-                    />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        {editingProduct ? 'Current Inventory Stock' : 'Opening Stock'}
+                      </label>
+                      {editingProduct && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          Opening was {editingProduct.openingStock}
+                        </span>
+                      )}
+                    </div>
+                    {editingProduct ? (
+                      <div className="flex items-center justify-between bg-surface-elevated/70 border border-border rounded-xl px-3 py-2 text-xs font-mono text-foreground">
+                        <span className="font-bold text-foreground">
+                          {editingProduct.currentStock} {editingProduct.unitCode || ''}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">Managed via Ledger</span>
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={openingStock}
+                        onChange={(e) => setOpeningStock(e.target.value)}
+                        placeholder="0"
+                        className="w-full bg-input border border-border rounded-xl px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary"
+                      />
+                    )}
                   </div>
 
                   {/* Reorder Level */}
@@ -920,11 +1205,4 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
     </div>
   );
 };
-function setPreviewSku(sku: any) {
-  throw new Error('Function not implemented.');
-}
-
-function setIsCustomSku(arg0: boolean) {
-  throw new Error('Function not implemented.');
-}
 

@@ -298,17 +298,25 @@ export class SettingsService {
 
       // 4. Seed Standard Retail Units
       const defaultUnits = [
-        { name: 'Piece', shortCode: 'PCS', allowDecimal: false },
-        { name: 'Kilogram', shortCode: 'KG', allowDecimal: true },
-        { name: 'Box', shortCode: 'BOX', allowDecimal: false },
-        { name: 'Meter', shortCode: 'MTR', allowDecimal: true },
-        { name: 'Liter', shortCode: 'LTR', allowDecimal: true },
+        { name: 'Piece', shortCode: 'PCS', category: 'COUNT', allowDecimal: false, precision: 0, conversionFactor: 1, baseUnitCode: 'PCS' },
+        { name: 'Kilogram', shortCode: 'KG', category: 'WEIGHT', allowDecimal: true, precision: 3, conversionFactor: 1, baseUnitCode: 'KG' },
+        { name: 'Gram', shortCode: 'G', category: 'WEIGHT', allowDecimal: true, precision: 3, conversionFactor: 0.001, baseUnitCode: 'KG' },
+        { name: 'Box', shortCode: 'BOX', category: 'COUNT', allowDecimal: false, precision: 0, conversionFactor: 1, baseUnitCode: 'PCS' },
+        { name: 'Meter', shortCode: 'MTR', category: 'LENGTH', allowDecimal: true, precision: 2, conversionFactor: 1, baseUnitCode: 'MTR' },
+        { name: 'Liter', shortCode: 'LTR', category: 'VOLUME', allowDecimal: true, precision: 3, conversionFactor: 1, baseUnitCode: 'LTR' },
+        { name: 'Milliliter', shortCode: 'ML', category: 'VOLUME', allowDecimal: true, precision: 3, conversionFactor: 0.001, baseUnitCode: 'LTR' },
       ];
 
       for (const unit of defaultUnits) {
         await tx.unit.upsert({
           where: { shortCode: unit.shortCode },
-          update: {},
+          update: {
+            category: unit.category,
+            allowDecimal: unit.allowDecimal,
+            precision: unit.precision,
+            conversionFactor: unit.conversionFactor,
+            baseUnitCode: unit.baseUnitCode,
+          },
           create: unit,
         });
       }

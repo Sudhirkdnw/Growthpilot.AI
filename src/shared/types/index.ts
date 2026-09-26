@@ -102,7 +102,11 @@ export interface UnitDTO {
   id: string;
   name: string;
   shortCode: string;
+  category?: 'COUNT' | 'WEIGHT' | 'VOLUME' | 'LENGTH';
   allowDecimal: boolean;
+  precision?: number;
+  conversionFactor?: number;
+  baseUnitCode?: string | null;
   status: Status;
   productCount?: number;
 }
@@ -118,7 +122,10 @@ export interface ProductDTO {
   brandName?: string | null;
   unitId: string;
   unitCode?: string;
+  unitCategory?: 'COUNT' | 'WEIGHT' | 'VOLUME' | 'LENGTH';
   allowDecimal?: boolean;
+  precision?: number;
+  allowSellByAmount?: boolean;
   purchasePrice: number;
   salePrice: number;
   taxRate: number;
@@ -129,6 +136,38 @@ export interface ProductDTO {
   imageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProductImportRow {
+  name: string;
+  sku?: string;
+  barcode?: string;
+  categoryName?: string;
+  brandName?: string;
+  unitCode?: string;
+  purchasePrice?: number;
+  salePrice: number;
+  mrp?: number;
+  taxRate?: number;
+  openingStock?: number;
+  reorderLevel?: number;
+  status?: Status;
+  imageUrl?: string;
+}
+
+export interface ProductImportOptions {
+  updateExistingSku?: boolean;
+  autoCreateCategories?: boolean;
+  autoCreateBrands?: boolean;
+  defaultUnitId?: string;
+}
+
+export interface ProductImportResult {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: { row: number; name?: string; message: string }[];
 }
 
 // POS & Cart DTOs
@@ -144,6 +183,10 @@ export interface CartItemDTO {
   discount: number;
   lineTotal: number;
   allowDecimal: boolean;
+  unitCode?: string;
+  precision?: number;
+  unitCategory?: 'COUNT' | 'WEIGHT' | 'VOLUME' | 'LENGTH';
+  allowSellByAmount?: boolean;
 }
 
 export interface CreateSaleDTO {
@@ -152,6 +195,7 @@ export interface CreateSaleDTO {
     productId: string;
     quantity: number;
     sellingPrice: number;
+    unitCode?: string;
     discount?: number;
     taxRate?: number;
   }[];
@@ -229,6 +273,7 @@ export interface PurchaseItemDTO {
   productId: string;
   productName: string;
   sku: string;
+  unitCode?: string;
   quantity: number;
   purchasePrice: number;
   discount: number;
@@ -252,6 +297,7 @@ export interface CreatePurchaseItemInputDTO {
   productId: string;
   quantity: number;
   purchasePrice: number;
+  unitCode?: string;
   discount?: number;
   taxRate?: number;
 }

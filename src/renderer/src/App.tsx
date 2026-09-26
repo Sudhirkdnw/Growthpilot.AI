@@ -45,14 +45,15 @@ export default function App() {
   const [cartTotal, setCartTotal] = useState<number>(0);
   const [showPrinterSettings, setShowPrinterSettings] = useState<boolean>(false);
   const [showBackupRestore, setShowBackupRestore] = useState<boolean>(false);
+  const [posFullscreen, setPosFullscreen] = useState<boolean>(false);
 
   useEffect(() => {
     checkStatus();
   }, [checkStatus]);
 
-  // Global Barcode Scanner Detector (active only when logged in and unlocked)
+  // Global Barcode Scanner Detector (active only when logged in and unlocked, and not on POS view)
   useBarcodeScanner({
-    config: { enabled: Boolean(session && !isLocked) },
+    config: { enabled: Boolean(session && !isLocked && activeTab !== 'pos') },
     onScan: (barcode) => {
       setLastScanned(barcode);
       setCartCount((prev) => prev + 1);
@@ -95,10 +96,11 @@ export default function App() {
       {isLocked && <LockScreen />}
 
       {/* Sidebar Navigation */}
-      <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col justify-between flex-shrink-0">
-        <div>
-          {/* Brand Header */}
-          <div className="p-5 border-b border-sidebar-border flex items-center space-x-3">
+      {(!posFullscreen || activeTab !== 'pos') && (
+        <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col justify-between flex-shrink-0">
+          <div>
+            {/* Brand Header */}
+            <div className="p-5 border-b border-sidebar-border flex items-center space-x-3">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="w-9 h-9 object-contain rounded-lg shadow-accent" />
             ) : (
@@ -262,67 +264,73 @@ export default function App() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-        {/* Top Header Bar */}
-        <header className="h-14 border-b border-border bg-surface/80 backdrop-blur-md px-6 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center space-x-4">
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-              {activeTab === 'pos' && 'Point of Sale (Cashier Station)'}
-              {activeTab === 'dashboard' && 'Executive Store Dashboard'}
-              {activeTab === 'products' && 'Master Product Catalog'}
-              {activeTab === 'inventory' && 'Double-Entry Stock Ledger'}
-              {activeTab === 'purchases' && 'Purchases & Supplier Accounts'}
-              {activeTab === 'customers' && 'Customer Ledger & Accounts Receivable (Khata)'}
-              {activeTab === 'reports' && 'Business Intelligence & Historical Profit'}
-            </h2>
-            {lastScanned && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-muted text-primary border border-primary/30">
-                <ScanBarcode className="w-3 h-3 mr-1" />
-                Scanned: {lastScanned}
-              </span>
-            )}
-          </div>
+        {/* Top Header Bar (Shown on all tabs except dedicated POS Workstation) */}
+        {activeTab !== 'pos' && (
+          <header className="h-14 border-b border-border bg-surface/80 backdrop-blur-md px-6 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center space-x-4">
+              <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+                {activeTab === 'dashboard' && 'Executive Store Dashboard'}
+                {activeTab === 'products' && 'Master Product Catalog'}
+                {activeTab === 'inventory' && 'Double-Entry Stock Ledger'}
+                {activeTab === 'purchases' && 'Purchases & Supplier Accounts'}
+                {activeTab === 'customers' && 'Customer Ledger & Accounts Receivable (Khata)'}
+                {activeTab === 'reports' && 'Business Intelligence & Historical Profit'}
+              </h2>
+              {lastScanned && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-muted text-primary border border-primary/30">
+                  <ScanBarcode className="w-3 h-3 mr-1" />
+                  Scanned: {lastScanned}
+                </span>
+              )}
+            </div>
 
-          <div className="flex items-center space-x-3 text-xs">
-            <button
-              onClick={() => setShowBackupRestore(true)}
-              title="Database Backup, Restore & Disaster Recovery Center"
-              className="px-2.5 py-1 rounded bg-surface-muted hover:bg-surface-hover text-foreground-secondary hover:text-foreground border border-border flex items-center space-x-1.5 transition-colors"
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Backups & DR</span>
-            </button>
-            {session.user.role === 'ADMIN' && (
+            <div className="flex items-center space-x-3 text-xs">
               <button
-                onClick={() => setActiveTab('admin')}
-                title="Administration & Master Settings"
+                onClick={() => setShowBackupRestore(true)}
+                title="Database Backup, Restore & Disaster Recovery Center"
                 className="px-2.5 py-1 rounded bg-surface-muted hover:bg-surface-hover text-foreground-secondary hover:text-foreground border border-border flex items-center space-x-1.5 transition-colors"
               >
-                <Settings className="w-3.5 h-3.5 text-accent" />
-                <span>Administration</span>
+                <Database className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Backups & DR</span>
               </button>
-            )}
-            <button
-              onClick={() => setShowPrinterSettings(true)}
-              title="Configure Hardware Printer & Invoices"
-              className="px-2.5 py-1 rounded bg-surface-muted hover:bg-surface-hover text-foreground-secondary hover:text-foreground border border-border flex items-center space-x-1.5 transition-colors"
-            >
-              <Printer className="w-3.5 h-3.5 text-accent" />
-              <span>Printer Settings</span>
-            </button>
-            <span className="px-2.5 py-1 rounded bg-surface-muted text-foreground-secondary border border-border flex items-center space-x-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-accent" />
-              <span>Role: {session.user.role}</span>
-            </span>
-          </div>
-        </header>
+              {session.user.role === 'ADMIN' && (
+                <button
+                  onClick={() => setActiveTab('admin')}
+                  title="Administration & Master Settings"
+                  className="px-2.5 py-1 rounded bg-surface-muted hover:bg-surface-hover text-foreground-secondary hover:text-foreground border border-border flex items-center space-x-1.5 transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5 text-accent" />
+                  <span>Administration</span>
+                </button>
+              )}
+              <button
+                onClick={() => setShowPrinterSettings(true)}
+                title="Configure Hardware Printer & Invoices"
+                className="px-2.5 py-1 rounded bg-surface-muted hover:bg-surface-hover text-foreground-secondary hover:text-foreground border border-border flex items-center space-x-1.5 transition-colors"
+              >
+                <Printer className="w-3.5 h-3.5 text-accent" />
+                <span>Printer Settings</span>
+              </button>
+              <span className="px-2.5 py-1 rounded bg-surface-muted text-foreground-secondary border border-border flex items-center space-x-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-accent" />
+                <span>Role: {session.user.role}</span>
+              </span>
+            </div>
+          </header>
+        )}
 
         {/* View Body */}
-        <div className={`flex-1 overflow-y-auto ${activeTab === 'admin' ? 'p-0 flex flex-col' : 'p-6'}`}>
+        <div className={`flex-1 ${activeTab === 'admin' || activeTab === 'pos' ? 'p-0 flex flex-col overflow-hidden h-full' : 'p-6 overflow-y-auto'}`}>
           {activeTab === 'pos' && (
-            <PosBillingView />
+            <PosBillingView
+              isFullscreen={posFullscreen}
+              onToggleFullscreen={() => setPosFullscreen(!posFullscreen)}
+              onLockOrExit={() => lock()}
+            />
           )}
 
           {activeTab === 'dashboard' && (

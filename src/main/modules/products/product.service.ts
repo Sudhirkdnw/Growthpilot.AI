@@ -7,7 +7,13 @@ import {
   UpdateProductSchema,
   ProductQuerySchema,
 } from '../../../shared/schemas';
-import { ProductDTO, PaginatedResult } from '../../../shared/types';
+import {
+  ProductDTO,
+  PaginatedResult,
+  ProductImportRow,
+  ProductImportOptions,
+  ProductImportResult,
+} from '../../../shared/types';
 import { z } from 'zod';
 
 export class ProductService {
@@ -51,7 +57,7 @@ export class ProductService {
         include: {
           category: { select: { id: true, name: true } },
           brand: { select: { id: true, name: true } },
-          unit: { select: { id: true, name: true, shortCode: true, allowDecimal: true } },
+          unit: { select: { id: true, name: true, shortCode: true, allowDecimal: true, category: true, precision: true, conversionFactor: true, baseUnitCode: true } },
         },
       }),
       prisma.product.count({ where }),
@@ -68,7 +74,10 @@ export class ProductService {
       brandName: p.brand?.name || null,
       unitId: p.unitId,
       unitCode: p.unit?.shortCode,
+      unitCategory: (p.unit as any)?.category,
       allowDecimal: p.unit?.allowDecimal ?? false,
+      precision: (p.unit as any)?.precision ?? (p.unit?.allowDecimal ? 3 : 0),
+      allowSellByAmount: (p as any).allowSellByAmount ?? false,
       purchasePrice: Number(p.purchasePrice),
       salePrice: Number(p.salePrice),
       taxRate: Number(p.taxRate),
@@ -117,7 +126,10 @@ export class ProductService {
       brandName: p.brand?.name || null,
       unitId: p.unitId,
       unitCode: p.unit?.shortCode,
+      unitCategory: (p.unit as any)?.category,
       allowDecimal: p.unit?.allowDecimal ?? false,
+      precision: (p.unit as any)?.precision ?? (p.unit?.allowDecimal ? 3 : 0),
+      allowSellByAmount: (p as any).allowSellByAmount ?? false,
       purchasePrice: Number(p.purchasePrice),
       salePrice: Number(p.salePrice),
       taxRate: Number(p.taxRate),
@@ -163,7 +175,10 @@ export class ProductService {
       brandName: p.brand?.name || null,
       unitId: p.unitId,
       unitCode: p.unit?.shortCode,
+      unitCategory: (p.unit as any)?.category,
       allowDecimal: p.unit?.allowDecimal ?? false,
+      precision: (p.unit as any)?.precision ?? (p.unit?.allowDecimal ? 3 : 0),
+      allowSellByAmount: (p as any).allowSellByAmount ?? false,
       purchasePrice: Number(p.purchasePrice),
       salePrice: Number(p.salePrice),
       taxRate: Number(p.taxRate),
@@ -280,6 +295,7 @@ export class ProductService {
             openingStock: validated.openingStock,
             reorderLevel: validated.reorderLevel,
             currentStock: validated.openingStock, // Initial cached stock
+            allowSellByAmount: validated.allowSellByAmount ?? false,
             status: 'ACTIVE',
             imageUrl: validated.imageUrl || null,
           },
@@ -333,7 +349,10 @@ export class ProductService {
           brandName: product.brand?.name || null,
           unitId: product.unitId,
           unitCode: product.unit?.shortCode,
+          unitCategory: (product.unit as any)?.category,
           allowDecimal: product.unit?.allowDecimal ?? false,
+          precision: (product.unit as any)?.precision ?? (product.unit?.allowDecimal ? 3 : 0),
+          allowSellByAmount: (product as any).allowSellByAmount ?? false,
           purchasePrice: Number(product.purchasePrice),
           salePrice: Number(product.salePrice),
           taxRate: Number(product.taxRate),
@@ -381,9 +400,22 @@ export class ProductService {
     }
 
     // Verify relations if modified
-    if (validated.unitId) {
+    if (validated.unitId && validated.unitId !== existing.unitId) {
       const unit = await prisma.unit.findUnique({ where: { id: validated.unitId } });
       if (!unit) throw new Error(`Unit with ID ${validated.unitId} does not exist`);
+
+      // Prevent unit change if historical transactions exist
+      const [ledgerCount, saleItemCount, purchaseItemCount] = await Promise.all([
+        prisma.stockLedger.count({ where: { productId: id } }),
+        prisma.saleItem.count({ where: { productId: id } }),
+        prisma.purchaseItem.count({ where: { productId: id } }),
+      ]);
+
+      if (ledgerCount > 0 || saleItemCount > 0 || purchaseItemCount > 0) {
+        throw new Error(
+          `Cannot change unit for product "${existing.name}" because historical transactions exist (${ledgerCount} stock ledger, ${saleItemCount} sale items, ${purchaseItemCount} purchase items). Unit modification is blocked to maintain inventory and financial integrity.`
+        );
+      }
     }
     if (validated.categoryId) {
       const cat = await prisma.category.findUnique({ where: { id: validated.categoryId } });
@@ -409,6 +441,7 @@ export class ProductService {
             ...(validated.salePrice !== undefined ? { salePrice: validated.salePrice } : {}),
             ...(validated.taxRate !== undefined ? { taxRate: validated.taxRate } : {}),
             ...(validated.reorderLevel !== undefined ? { reorderLevel: validated.reorderLevel } : {}),
+            ...(validated.allowSellByAmount !== undefined ? { allowSellByAmount: validated.allowSellByAmount } : {}),
             ...(validated.status ? { status: validated.status } : {}),
             ...(validated.imageUrl !== undefined ? { imageUrl: validated.imageUrl || null } : {}),
           },
@@ -454,7 +487,10 @@ export class ProductService {
           brandName: updated.brand?.name || null,
           unitId: updated.unitId,
           unitCode: updated.unit?.shortCode,
+          unitCategory: (updated.unit as any)?.category,
           allowDecimal: updated.unit?.allowDecimal ?? false,
+          precision: (updated.unit as any)?.precision ?? (updated.unit?.allowDecimal ? 3 : 0),
+          allowSellByAmount: (updated as any).allowSellByAmount ?? false,
           purchasePrice: Number(updated.purchasePrice),
           salePrice: Number(updated.salePrice),
           taxRate: Number(updated.taxRate),
@@ -541,6 +577,259 @@ export class ProductService {
         message: `Product "${product.name}" had no transaction history and was permanently deleted.`,
       };
     }
+  }
+
+  /**
+   * Bulk import products from CSV data with taxonomy resolution, stock ledger initialization, and SKU auto-generation.
+   */
+  async importProducts(
+    rows: ProductImportRow[],
+    options: ProductImportOptions = {},
+    userId: string
+  ): Promise<ProductImportResult> {
+    const prisma = getPrismaClient();
+    const result: ProductImportResult = {
+      total: rows?.length || 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [],
+    };
+
+    if (!rows || rows.length === 0) {
+      return result;
+    }
+
+    // 1. Preload master taxonomies (categories, brands, units) for fast mapping
+    const [existingCategories, existingBrands, existingUnits] = await Promise.all([
+      prisma.category.findMany(),
+      prisma.brand.findMany(),
+      prisma.unit.findMany({ where: { status: 'ACTIVE' } }),
+    ]);
+
+    const categoryMap = new Map<string, string>(); // lowercase name -> id
+    existingCategories.forEach((c) => categoryMap.set(c.name.trim().toLowerCase(), c.id));
+
+    const brandMap = new Map<string, string>(); // lowercase name -> id
+    existingBrands.forEach((b) => brandMap.set(b.name.trim().toLowerCase(), b.id));
+
+    const unitMap = new Map<string, string>(); // lowercase code/name -> id
+    existingUnits.forEach((u) => {
+      unitMap.set(u.shortCode.trim().toLowerCase(), u.id);
+      unitMap.set(u.name.trim().toLowerCase(), u.id);
+    });
+
+    // Determine smart default unit ID
+    let fallbackUnitId = options.defaultUnitId;
+    if (!fallbackUnitId || !existingUnits.some((u) => u.id === fallbackUnitId)) {
+      const pcUnit = existingUnits.find(
+        (u) =>
+          u.shortCode.toLowerCase() === 'pcs' ||
+          u.shortCode.toLowerCase() === 'pc' ||
+          u.name.toLowerCase().includes('piece')
+      );
+      fallbackUnitId = pcUnit?.id || (existingUnits.length > 0 ? existingUnits[0].id : undefined);
+    }
+
+    if (!fallbackUnitId) {
+      // Need at least one unit in the database
+      const defaultUnit = await prisma.unit.create({
+        data: { name: 'Piece', shortCode: 'PCS', allowDecimal: false, status: 'ACTIVE' },
+      });
+      fallbackUnitId = defaultUnit.id;
+      unitMap.set('pcs', defaultUnit.id);
+      unitMap.set('piece', defaultUnit.id);
+    }
+
+    // Process each row
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      const rowNum = index + 1;
+
+      try {
+        const name = (row.name || '').trim();
+        if (!name) {
+          result.errors.push({ row: rowNum, message: 'Product name is required' });
+          result.skipped++;
+          continue;
+        }
+
+        const salePrice = Number(row.salePrice);
+        if (isNaN(salePrice) || salePrice < 0) {
+          result.errors.push({ row: rowNum, name, message: 'Sale price must be a valid positive number' });
+          result.skipped++;
+          continue;
+        }
+
+        const purchasePrice = Number(row.purchasePrice) || 0;
+        const mrp = row.mrp !== undefined && !isNaN(Number(row.mrp)) ? Number(row.mrp) : undefined;
+        const taxRate = Number(row.taxRate) || 0;
+        const openingStock = Number(row.openingStock) || 0;
+        const reorderLevel = Number(row.reorderLevel) || 10;
+        const status = row.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE';
+        const imageUrl = row.imageUrl ? String(row.imageUrl).trim() : null;
+
+        // Resolve Category
+        let categoryId: string | null = null;
+        if (row.categoryName && row.categoryName.trim()) {
+          const cName = row.categoryName.trim();
+          const lowerCName = cName.toLowerCase();
+          if (categoryMap.has(lowerCName)) {
+            categoryId = categoryMap.get(lowerCName)!;
+          } else if (options.autoCreateCategories !== false) {
+            const newCat = await prisma.category.create({
+              data: { name: cName, status: 'ACTIVE' },
+            });
+            categoryMap.set(lowerCName, newCat.id);
+            categoryId = newCat.id;
+          }
+        }
+
+        // Resolve Brand
+        let brandId: string | null = null;
+        if (row.brandName && row.brandName.trim()) {
+          const bName = row.brandName.trim();
+          const lowerBName = bName.toLowerCase();
+          if (brandMap.has(lowerBName)) {
+            brandId = brandMap.get(lowerBName)!;
+          } else if (options.autoCreateBrands !== false) {
+            const newBrand = await prisma.brand.create({
+              data: { name: bName, status: 'ACTIVE' },
+            });
+            brandMap.set(lowerBName, newBrand.id);
+            brandId = newBrand.id;
+          }
+        }
+
+        // Resolve Unit
+        let unitId = fallbackUnitId;
+        if (row.unitCode && row.unitCode.trim()) {
+          const uCode = row.unitCode.trim().toLowerCase();
+          if (unitMap.has(uCode)) {
+            unitId = unitMap.get(uCode)!;
+          }
+        }
+
+        // Check SKU
+        let sku = (row.sku || '').trim();
+        let barcode = (row.barcode || '').trim() || null;
+
+        // If SKU is given, check if product already exists
+        let existingProduct = null;
+        if (sku && sku.toUpperCase() !== 'AUTO') {
+          existingProduct = await prisma.product.findUnique({ where: { sku } });
+        }
+
+        if (existingProduct) {
+          if (options.updateExistingSku) {
+            // Update existing product
+            await executeWriteTransaction(async (tx) => {
+              await tx.product.update({
+                where: { id: existingProduct.id },
+                data: {
+                  name,
+                  barcode: barcode || existingProduct.barcode,
+                  categoryId: categoryId || existingProduct.categoryId,
+                  brandId: brandId || existingProduct.brandId,
+                  unitId: unitId || existingProduct.unitId,
+                  purchasePrice,
+                  salePrice,
+                  taxRate,
+                  reorderLevel,
+                  status,
+                  ...(imageUrl ? { imageUrl } : {}),
+                },
+              });
+            });
+            result.updated++;
+          } else {
+            result.errors.push({
+              row: rowNum,
+              name,
+              message: `Product with SKU "${sku}" already exists (skipped)`,
+            });
+            result.skipped++;
+          }
+          continue;
+        }
+
+        // Auto-generate SKU if empty or AUTO
+        if (!sku || sku.toUpperCase() === 'AUTO') {
+          await executeWriteTransaction(async (tx) => {
+            sku = await invoiceSequenceService.getNextInvoiceNumber(tx, 'PRODUCT_SKU');
+          });
+        }
+
+        // Check if barcode already in use by another product
+        if (barcode) {
+          const barcodeOwner = await prisma.product.findUnique({ where: { barcode } });
+          if (barcodeOwner) {
+            barcode = null; // Drop duplicate barcode to prevent unique constraint error
+          }
+        }
+
+        // Create new product
+        await executeWriteTransaction(async (tx) => {
+          const product = await tx.product.create({
+            data: {
+              name,
+              sku,
+              barcode,
+              categoryId,
+              brandId,
+              unitId: unitId!,
+              purchasePrice,
+              salePrice,
+              taxRate,
+              openingStock,
+              reorderLevel,
+              currentStock: openingStock,
+              status,
+              imageUrl,
+            },
+          });
+
+          // If opening stock > 0, record OPENING ledger entry
+          if (openingStock > 0) {
+            await tx.stockLedger.create({
+              data: {
+                productId: product.id,
+                transactionType: 'OPENING',
+                referenceId: product.id,
+                quantityChange: openingStock,
+                balanceAfter: openingStock,
+                notes: 'Initial opening stock from CSV import',
+              },
+            });
+          }
+        });
+
+        result.created++;
+      } catch (err: any) {
+        result.errors.push({
+          row: rowNum,
+          name: row.name,
+          message: err?.message || 'Failed to import row',
+        });
+        result.skipped++;
+      }
+    }
+
+    await auditService.log({
+      userId,
+      action: 'BULK_IMPORT',
+      entityType: 'Product',
+      entityId: 'CSV_IMPORT',
+      newValue: {
+        total: result.total,
+        created: result.created,
+        updated: result.updated,
+        skipped: result.skipped,
+        errorCount: result.errors.length,
+      },
+    });
+
+    return result;
   }
 }
 

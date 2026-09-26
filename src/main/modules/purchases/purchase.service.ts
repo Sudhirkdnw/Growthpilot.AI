@@ -9,6 +9,12 @@ import {
   PurchaseDetailDTO,
   PaginatedResult,
 } from '../../../shared/types';
+import {
+  roundQuantity,
+  roundMoney,
+  validateQuantity,
+  normalizeQuantity,
+} from '../../../shared/utils/quantity';
 
 export class PurchaseService {
   private get prisma() {
@@ -34,15 +40,15 @@ export class PurchaseService {
     let totalTaxAmount = 0;
 
     const processedItems = items.map((item) => {
-      const quantity = Number(item.quantity);
-      const purchasePrice = Number(item.purchasePrice);
-      const discount = Number(item.discount || 0);
+      const quantity = roundQuantity(Number(item.quantity), 4);
+      const purchasePrice = roundMoney(Number(item.purchasePrice));
+      const discount = roundMoney(Number(item.discount || 0));
       const taxRate = Number(item.taxRate || 0);
 
-      const lineGross = quantity * purchasePrice;
-      const taxable = Math.max(0, lineGross - discount);
-      const lineTax = Math.round(taxable * (taxRate / 100) * 100) / 100;
-      const lineTotal = Math.round((taxable + lineTax) * 100) / 100;
+      const lineGross = roundMoney(quantity * purchasePrice);
+      const taxable = Math.max(0, roundMoney(lineGross - discount));
+      const lineTax = roundMoney(taxable * (taxRate / 100));
+      const lineTotal = roundMoney(taxable + lineTax);
 
       subtotal += lineGross;
       totalItemDiscounts += discount;
@@ -59,10 +65,10 @@ export class PurchaseService {
       };
     });
 
-    const netSubtotal = Math.round(subtotal * 100) / 100;
-    const finalDiscount = Math.round((totalItemDiscounts + Number(globalDiscount || 0)) * 100) / 100;
-    const finalTax = Math.round((totalTaxAmount + Number(orderTax || 0)) * 100) / 100;
-    const grandTotal = Math.max(0, Math.round((subtotal - finalDiscount + finalTax) * 100) / 100);
+    const netSubtotal = roundMoney(subtotal);
+    const finalDiscount = roundMoney(totalItemDiscounts + Number(globalDiscount || 0));
+    const finalTax = roundMoney(totalTaxAmount + Number(orderTax || 0));
+    const grandTotal = Math.max(0, roundMoney(subtotal - finalDiscount + finalTax));
 
     return {
       items: processedItems,
@@ -107,7 +113,7 @@ export class PurchaseService {
     const productIds = validated.items.map((i) => i.productId);
     const existingProducts = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, name: true, sku: true, status: true },
+      include: { unit: true },
     });
 
     if (existingProducts.length !== productIds.length) {
@@ -121,6 +127,27 @@ export class PurchaseService {
       throw new Error(
         `Cannot purchase inactive product(s): ${inactiveProducts.map((p) => p.name).join(', ')}`
       );
+    }
+
+    const productMap = new Map(existingProducts.map((p) => [p.id, p]));
+    for (const item of validated.items) {
+      const product = productMap.get(item.productId)!;
+      if (item.unitCode && product.unit) {
+        try {
+          item.quantity = normalizeQuantity(item.quantity, item.unitCode, product.unit.shortCode);
+        } catch (err: any) {
+          throw new Error(`Unit validation failed for "${product.name}": ${err?.message}`);
+        }
+      }
+
+      const qVal = validateQuantity(item.quantity, {
+        allowDecimal: product.unit?.allowDecimal,
+        precision: product.unit?.precision,
+        unitCode: product.unit?.shortCode,
+      });
+      if (!qVal.valid) {
+        throw new Error(`Invalid purchase quantity for "${product.name}": ${qVal.error}`);
+      }
     }
 
     // 3. Calculation & Validation
@@ -197,7 +224,7 @@ export class PurchaseService {
           productId: item.productId,
           transactionType: 'PURCHASE',
           referenceId: purchase.id,
-          quantityChange: item.quantity,
+          quantityChange: roundQuantity(item.quantity, 4),
           notes: `Purchase Bill ${purchaseNumber} from ${supplier?.name || 'Cash Supplier'}`,
         });
 
@@ -206,6 +233,7 @@ export class PurchaseService {
           productId: item.productId,
           productName: prod.name,
           sku: prod.sku,
+          unitCode: prod.unit?.shortCode || 'PCS',
           quantity: item.quantity,
           purchasePrice: item.purchasePrice,
           discount: item.discount,

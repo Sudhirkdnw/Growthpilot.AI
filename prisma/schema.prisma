@@ -83,34 +83,39 @@ model Brand {
 }
 
 model Unit {
-  id           String    @id @default(uuid())
-  name         String    @unique // e.g. Piece, Kilogram, Box, Meter
-  shortCode    String    @unique // e.g. PCS, KG, BOX, MTR
-  allowDecimal Boolean   @default(false)
-  status       String    @default("ACTIVE")
-  products     Product[]
+  id               String    @id @default(uuid())
+  name             String    @unique // e.g. Piece, Kilogram, Box, Meter
+  shortCode        String    @unique // e.g. PCS, KG, BOX, MTR
+  category         String    @default("COUNT") // COUNT, WEIGHT, VOLUME, LENGTH
+  allowDecimal     Boolean   @default(false)
+  precision        Int       @default(0) // Decimal places: 0 for PCS, 3 for KG, 3 for LTR, 2 for MTR
+  conversionFactor Decimal   @default(1) // Factor to convert to base unit (e.g. g -> kg is 0.001)
+  baseUnitCode     String?   // Code of base unit in category (e.g. KG, LTR, MTR, PCS)
+  status           String    @default("ACTIVE")
+  products         Product[]
 
   @@map("units")
 }
 
 model Product {
-  id            String             @id @default(uuid())
-  name          String
-  sku           String             @unique
-  barcode       String?            @unique
-  categoryId    String?
-  brandId       String?
-  unitId        String
-  purchasePrice Decimal            @default(0) // Decimal representation
-  salePrice     Decimal            @default(0)
-  taxRate       Decimal            @default(0) // Percentage: 0, 5, 12, 18, 28
-  openingStock  Decimal            @default(0)
-  reorderLevel  Decimal            @default(10)
-  currentStock  Decimal            @default(0) // Performance cache, reconciled with stock_ledger
-  status        String             @default("ACTIVE") // ACTIVE, INACTIVE
-  imageUrl      String?            // Product image: URL or base64 data URI
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  id                String             @id @default(uuid())
+  name              String
+  sku               String             @unique
+  barcode           String?            @unique
+  categoryId        String?
+  brandId           String?
+  unitId            String
+  purchasePrice     Decimal            @default(0) // Decimal representation
+  salePrice         Decimal            @default(0)
+  taxRate           Decimal            @default(0) // Percentage: 0, 5, 12, 18, 28
+  openingStock      Decimal            @default(0)
+  reorderLevel      Decimal            @default(10)
+  currentStock      Decimal            @default(0) // Performance cache, reconciled with stock_ledger
+  allowSellByAmount Boolean            @default(false) // Whether sell-by-amount is enabled for this product
+  status            String             @default("ACTIVE") // ACTIVE, INACTIVE
+  imageUrl          String?            // Product image: URL or base64 data URI
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   category      Category?          @relation(fields: [categoryId], references: [id])
   brand         Brand?             @relation(fields: [brandId], references: [id])

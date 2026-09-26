@@ -5,9 +5,10 @@ import {
   LowStockProductDTO,
   StockMovementReportDTO,
 } from '../../../shared/types';
+import { roundQuantity, roundMoney } from '../../../shared/utils/quantity';
 
 function n(v: any): number {
-  return Math.round(Number(v || 0) * 100) / 100;
+  return roundMoney(Number(v || 0));
 }
 
 /**
@@ -73,9 +74,9 @@ export class InventoryReportService {
         unitCode: p.unit.shortCode,
         purchasePrice: n(p.purchasePrice),
         salePrice: n(p.salePrice),
-        currentStock: Math.round(stock * 1000) / 1000,
-        reorderLevel: Math.round(reorder * 1000) / 1000,
-        stockValue: Math.round(stock * price * 100) / 100,
+        currentStock: roundQuantity(stock, 4),
+        reorderLevel: roundQuantity(reorder, 4),
+        stockValue: roundMoney(stock * price),
         stockStatus,
         status: p.status,
       };

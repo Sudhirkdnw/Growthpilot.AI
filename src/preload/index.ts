@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'products:update',
       'products:delete',
       'products:deactivate',
+      'products:importCsv',
       'sales:create',
       'sales:getById',
       'sales:list',

@@ -11,6 +11,7 @@ import {
   StockReconciliationDTO,
   PaginatedResult,
 } from '../../../shared/types';
+import { roundQuantity, validateQuantity } from '../../../shared/utils/quantity';
 import { z } from 'zod';
 
 export class InventoryService {
@@ -43,8 +44,9 @@ export class InventoryService {
       throw new Error(`Product with ID ${params.productId} not found`);
     }
 
-    const currentStockNum = Number(product.currentStock);
-    const newBalance = currentStockNum + params.quantityChange;
+    const currentStockNum = roundQuantity(Number(product.currentStock), 4);
+    const qtyChange = roundQuantity(params.quantityChange, 4);
+    const newBalance = roundQuantity(currentStockNum + qtyChange, 4);
 
     // Update cached product stock
     await tx.product.update({
@@ -58,7 +60,7 @@ export class InventoryService {
         productId: params.productId,
         transactionType: params.transactionType,
         referenceId: params.referenceId,
-        quantityChange: params.quantityChange,
+        quantityChange: qtyChange,
         balanceAfter: newBalance,
         notes: params.notes || null,
       },
@@ -80,16 +82,29 @@ export class InventoryService {
     // 1. Validate Product
     const product = await prisma.product.findUnique({
       where: { id: validated.productId },
-      select: { id: true, name: true, sku: true, currentStock: true, status: true },
+      include: { unit: true },
     });
 
     if (!product) {
       throw new Error(`Product with ID ${validated.productId} does not exist.`);
     }
 
-    const currentStock = Number(product.currentStock);
-    const delta = validated.type === 'ADJUSTMENT_IN' ? validated.quantity : -validated.quantity;
-    const resultingStock = currentStock + delta;
+    // Validate unit decimal capability
+    if (product.unit) {
+      const qVal = validateQuantity(validated.quantity, {
+        allowDecimal: product.unit.allowDecimal,
+        precision: product.unit.precision,
+        unitCode: product.unit.shortCode,
+      });
+      if (!qVal.valid) {
+        throw new Error(qVal.error);
+      }
+    }
+
+    const currentStock = roundQuantity(Number(product.currentStock), 4);
+    const validQty = roundQuantity(validated.quantity, 4);
+    const delta = validated.type === 'ADJUSTMENT_IN' ? validQty : -validQty;
+    const resultingStock = roundQuantity(currentStock + delta, 4);
 
     // 2. Enforce Negative Stock Policy for reductions
     if (resultingStock < 0) {

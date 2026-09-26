@@ -7,9 +7,11 @@ import {
   Loader2,
   PackageOpen,
   User,
+  Printer,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { SaleReturnableDetailsDTO, RefundMethod } from '../../../../shared/types';
+import { SaleReturnableDetailsDTO, RefundMethod, InvoiceDocumentDTO } from '../../../../shared/types';
+import { InvoicePreviewModal } from '../invoice/InvoicePreviewModal';
 
 interface SalesReturnModalProps {
   saleId: string;
@@ -33,6 +35,7 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
   const [reason, setReason] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<any | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<InvoiceDocumentDTO | null>(null);
 
   useEffect(() => {
     fetchDetails();
@@ -78,21 +81,23 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
     }));
   };
 
-  // Calculate totals dynamically
+  // Calculate totals dynamically (exact 2-decimal precision matching backend service)
   const calculatedItems = (details?.items || []).map((item) => {
     const qty = returnQtys[item.saleItemId] || 0;
-    const discountPerUnit = item.soldQuantity > 0 ? item.discount / item.soldQuantity : 0;
-    const taxPerUnit = item.soldQuantity > 0 ? item.taxAmount / item.soldQuantity : 0;
+    const soldQty = item.soldQuantity || 1;
+    const discountPerUnit = soldQty > 0 ? (item.discount || 0) / soldQty : 0;
+    const lineDiscount = Math.round(discountPerUnit * qty * 100) / 100;
 
-    const lineSubtotal = item.unitPrice * qty;
-    const lineDiscount = discountPerUnit * qty;
-    const lineTax = taxPerUnit * qty;
-    const lineTotal = lineSubtotal - lineDiscount + lineTax;
+    const lineGross = Math.round(item.unitPrice * qty * 100) / 100;
+    const lineTaxable = Math.max(0, lineGross - lineDiscount);
+    const taxRate = Number(item.taxRate || 0);
+    const lineTax = Math.round(lineTaxable * (taxRate / 100) * 100) / 100;
+    const lineTotal = Math.round((lineTaxable + lineTax) * 100) / 100;
 
     return {
       ...item,
       returnQty: qty,
-      lineSubtotal,
+      lineSubtotal: lineGross,
       lineDiscount,
       lineTax,
       lineTotal,
@@ -100,10 +105,10 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
   });
 
   const totalReturnQty = calculatedItems.reduce((acc, it) => acc + it.returnQty, 0);
-  const totalSubtotal = calculatedItems.reduce((acc, it) => acc + it.lineSubtotal, 0);
-  const totalDiscount = calculatedItems.reduce((acc, it) => acc + it.lineDiscount, 0);
-  const totalTax = calculatedItems.reduce((acc, it) => acc + it.lineTax, 0);
-  const totalRefundAmount = Math.max(0, totalSubtotal - totalDiscount + totalTax);
+  const totalSubtotal = Math.round(calculatedItems.reduce((acc, it) => acc + it.lineSubtotal, 0) * 100) / 100;
+  const totalDiscount = Math.round(calculatedItems.reduce((acc, it) => acc + it.lineDiscount, 0) * 100) / 100;
+  const totalTax = Math.round(calculatedItems.reduce((acc, it) => acc + it.lineTax, 0) * 100) / 100;
+  const totalRefundAmount = Math.max(0, Math.round((totalSubtotal - totalDiscount + totalTax) * 100) / 100);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,12 +227,38 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
                 </p>
               </div>
 
-              <div className="pt-4 flex space-x-3">
+              <div className="pt-4 flex items-center justify-center space-x-3">
                 <button
+                  type="button"
+                  onClick={async () => {
+                    if (!successInfo?.id) return;
+                    try {
+                      const electronAPI = (window as any).electronAPI;
+                      const doc = await electronAPI.invoke('invoice:getDocument', {
+                        documentType: 'SALES_RETURN',
+                        id: successInfo.id,
+                        token: session?.token,
+                      });
+                      if (doc?.error) {
+                        setError(doc.error);
+                      } else {
+                        setPreviewDoc(doc);
+                      }
+                    } catch (err: any) {
+                      setError(err?.message || 'Failed to load credit note document.');
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-md flex items-center space-x-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Credit Note</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     onSuccess();
                   }}
-                  className="px-6 py-2.5 rounded-xl bg-surface-elevated hover:bg-surface-muted text-foreground text-xs font-bold transition-all"
+                  className="px-6 py-2.5 rounded-xl bg-surface-elevated hover:bg-surface-muted text-foreground text-xs font-bold transition-all border border-border"
                 >
                   Done
                 </button>
@@ -509,6 +540,14 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
           ) : null}
         </div>
       </div>
+
+      {/* Credit Note Document Preview & Print Modal */}
+      {previewDoc && (
+        <InvoicePreviewModal
+          document={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
+      )}
     </div>
   );
 };
