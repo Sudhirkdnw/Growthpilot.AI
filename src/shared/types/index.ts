@@ -81,13 +81,27 @@ export interface AuthResult {
 }
 
 // Master Data DTOs
+export interface SubcategoryDTO {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName?: string | null;
+  description?: string | null;
+  status: Status;
+  createdAt: string;
+  updatedAt?: string;
+  productCount?: number;
+}
+
 export interface CategoryDTO {
   id: string;
   name: string;
   description?: string | null;
   status: Status;
   createdAt: string;
+  updatedAt?: string;
   productCount?: number;
+  subcategories?: SubcategoryDTO[];
 }
 
 export interface BrandDTO {
@@ -118,6 +132,8 @@ export interface ProductDTO {
   barcode?: string | null;
   categoryId?: string | null;
   categoryName?: string | null;
+  subcategoryId?: string | null;
+  subcategoryName?: string | null;
   brandId?: string | null;
   brandName?: string | null;
   unitId: string;
@@ -353,6 +369,7 @@ export interface LowStockProductDTO {
   sku: string;
   barcode?: string | null;
   categoryName?: string | null;
+  imageUrl?: string | null;
   currentStock: number;
   reorderLevel: number;
   unitCode: string;
@@ -1311,6 +1328,37 @@ export interface SalesByProductDTO {
   };
 }
 
+export interface SalesByCategoryRowDTO {
+  categoryId: string;
+  categoryName: string;
+  itemCount: number;
+  quantitySold: number;
+  grossRevenue: number;
+  totalDiscount: number;
+  totalTax: number;
+  salesReturnValue: number;
+  netRevenue: number;
+  historicalCogs: number;
+  grossProfit: number;
+  grossMarginPercent: number;
+}
+
+export interface SalesByCategoryDTO {
+  period: string;
+  startDate: string;
+  endDate: string;
+  data: SalesByCategoryRowDTO[];
+  totals: {
+    itemCount: number;
+    quantitySold: number;
+    grossRevenue: number;
+    salesReturnValue: number;
+    netRevenue: number;
+    historicalCogs: number;
+    grossProfit: number;
+  };
+}
+
 export interface SalesByCustomerRowDTO {
   customerId: string | null;
   customerName: string;
@@ -1506,6 +1554,7 @@ export interface InventoryCurrentStockRowDTO {
   sku: string;
   barcode: string | null;
   categoryName: string | null;
+  subcategoryName?: string | null;
   brandName: string | null;
   unitCode: string;
   purchasePrice: number;

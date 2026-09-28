@@ -68,7 +68,7 @@ export function LoginView() {
                 onChange={(e) => setUsername(e.target.value)}
                 autoFocus
                 placeholder="Enter cashier/admin username"
-                className="w-full bg-input border border-input-border rounded-xl px-4 py-3 pl-10 text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
+                className="w-full bg-input border border-input-border rounded-xl px-4 py-3 pl-10 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus:border-primary transition-colors"
               />
               <User className="w-4 h-4 text-foreground-subtle absolute left-3.5 top-3.5" />
             </div>
@@ -84,7 +84,7 @@ export function LoginView() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-input border border-input-border rounded-xl px-4 py-3 pl-10 text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
+                className="w-full bg-input border border-input-border rounded-xl px-4 py-3 pl-10 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus:border-primary transition-colors"
               />
               <KeyRound className="w-4 h-4 text-foreground-subtle absolute left-3.5 top-3.5" />
             </div>
@@ -109,7 +109,7 @@ export function LoginView() {
           </button>
         </form>
 
-        <div className="pt-2 border-t border-slate-800/80 text-center flex items-center justify-center space-x-1 text-[11px] text-slate-500">
+        <div className="pt-2 border-t border-border text-center flex items-center justify-center space-x-1 text-[11px] text-foreground-muted">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           <span>Local SQLite database protected with bcrypt hash security</span>
         </div>

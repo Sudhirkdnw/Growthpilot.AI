@@ -135,7 +135,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const themeSetting = settings?.branding?.theme || 'dark';
+  const rawTheme = (settings?.branding?.theme || 'dark').toLowerCase();
+  const themeSetting = (rawTheme === 'light' || rawTheme === 'dark' || rawTheme === 'system')
+    ? (rawTheme as 'light' | 'dark' | 'system')
+    : 'dark';
 
   const effectiveTheme: 'light' | 'dark' = useMemo(() => {
     if (themeSetting === 'light') return 'light';
@@ -144,13 +147,46 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [themeSetting, systemIsDark]);
 
   const accentColor = settings?.branding?.accentColor || '#F97316';
-  const customTextColor = settings?.branding?.accentTextColor; // can be configured
+  const customTextColor = settings?.branding?.textColor;
   const appName = settings?.branding?.appName || settings?.company?.shopName || 'RS Inventory';
   const footerText = settings?.branding?.footerText || 'RS Inventory – Solo Station';
 
   const accentForeground = useMemo(() => {
-    return getAccessibleForegroundColor(accentColor);
-  }, [accentColor]);
+    return settings?.branding?.accentTextColor || getAccessibleForegroundColor(accentColor);
+  }, [accentColor, settings?.branding?.accentTextColor]);
+
+  const isLight = effectiveTheme === 'light';
+
+  // Base text color logic:
+  // - Light theme -> Base text color is Black (#0F172A)
+  // - Dark theme -> Base text color is White (#F8FAFC)
+  const textColors = useMemo(() => {
+    let baseText = isLight ? '#0F172A' : '#F8FAFC';
+    let textSecondary = isLight ? '#334155' : '#CBD5E1';
+    let textMuted = isLight ? '#64748B' : '#94A3B8';
+    let textSubtle = isLight ? '#94A3B8' : '#64748B';
+
+    // Check optional custom override
+    const rawCustom = customTextColor?.trim();
+    if (rawCustom) {
+      const lum = getRelativeLuminance(rawCustom);
+      // Valid contrast: in light theme, text must be dark (lum <= 0.35); in dark theme, text must be light (lum >= 0.65)
+      const isValidContrast = isLight ? lum <= 0.35 : lum >= 0.65;
+      if (isValidContrast) {
+        baseText = rawCustom;
+        textSecondary = hexToRgba(rawCustom, 0.85);
+        textMuted = hexToRgba(rawCustom, 0.65);
+        textSubtle = hexToRgba(rawCustom, 0.45);
+      }
+    }
+
+    return {
+      baseText,
+      textSecondary,
+      textMuted,
+      textSubtle,
+    };
+  }, [isLight, customTextColor]);
 
   // 2. Synchronize DOM classes, data-theme, and CSS custom properties on <html>
   useEffect(() => {
@@ -187,20 +223,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--color-accent-muted', mutedColor);
     root.style.setProperty('--color-accent-shadow', ringColor);
 
-    // C. Configured Text Color (if explicitly provided)
-    if (customTextColor && customTextColor.trim()) {
-      root.style.setProperty('--color-text', customTextColor.trim());
-      // Derive muted hierarchy from custom text color
-      root.style.setProperty('--color-text-secondary', hexToRgba(customTextColor.trim(), 0.85));
-      root.style.setProperty('--color-text-muted', hexToRgba(customTextColor.trim(), 0.65));
-      root.style.setProperty('--color-text-subtle', hexToRgba(customTextColor.trim(), 0.45));
-    } else {
-      root.style.removeProperty('--color-text');
-      root.style.removeProperty('--color-text-secondary');
-      root.style.removeProperty('--color-text-muted');
-      root.style.removeProperty('--color-text-subtle');
-    }
-  }, [effectiveTheme, accentColor, accentForeground, customTextColor]);
+    // C. Base Text Hierarchy (Black in Light mode, White in Dark mode)
+    root.style.setProperty('--color-text', textColors.baseText);
+    root.style.setProperty('--color-text-secondary', textColors.textSecondary);
+    root.style.setProperty('--color-text-muted', textColors.textMuted);
+    root.style.setProperty('--color-text-subtle', textColors.textSubtle);
+  }, [effectiveTheme, accentColor, accentForeground, textColors]);
 
   const logoUrl = useMemo(() => {
     if (effectiveTheme === 'dark') {
@@ -214,7 +242,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     themeSetting,
     accentColor,
     accentForeground,
-    textColor: customTextColor,
+    textColor: textColors.baseText,
     appName,
     footerText,
     logoUrl,

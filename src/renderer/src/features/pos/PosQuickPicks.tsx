@@ -1,6 +1,7 @@
 import React from 'react';
 import { ProductDTO } from '../../../../shared/types';
 import { formatUnitPrice } from '../../../../shared/utils/quantity';
+import { ProductImage } from '../../components/common/ProductImage';
 
 export interface PosQuickPicksProps {
   products: ProductDTO[];
@@ -29,8 +30,16 @@ export function PosQuickPicks({
             <button
               key={p.id}
               onClick={() => onSelectProduct(p)}
-              className="flex items-center space-x-2 px-3 py-1 rounded-full bg-surface-muted hover:bg-surface-hover border border-border/80 hover:border-primary/50 text-xs text-foreground transition-all shrink-0 group active:scale-95"
+              className="flex items-center space-x-2 px-2.5 py-1 rounded-full bg-surface-muted hover:bg-surface-hover border border-border/80 hover:border-primary/50 text-xs text-foreground transition-all shrink-0 group active:scale-95"
             >
+              <ProductImage
+                src={p.imageUrl}
+                name={p.name}
+                category={p.categoryName}
+                className="w-5 h-5 rounded-full shrink-0 border border-border/60"
+                imageClassName="w-full h-full object-cover p-0 rounded-full"
+                iconClassName="w-3 h-3"
+              />
               <span className="font-medium truncate max-w-[140px] text-foreground-secondary group-hover:text-foreground">
                 {p.name}
               </span>

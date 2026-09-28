@@ -15,6 +15,7 @@ import {
 import { DateRangePicker, ReportPeriod } from './shared/DateRangePicker';
 import { ReportSummaryCards } from './shared/ReportSummaryCards';
 import { ReportDataTable } from './shared/ReportDataTable';
+import { ProductImage } from '../../components/common/ProductImage';
 
 const fmt = (n: number) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -264,7 +265,24 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({ token }) => {
             data={data.data || []}
             emptyMessage="No product sales found for this period."
             columns={[
-              { key: 'productName', label: 'Product', render: (v) => <span className="font-medium text-foreground">{v}</span>, sortable: true },
+              {
+                key: 'productName',
+                label: 'Product',
+                render: (v, row) => (
+                  <div className="flex items-center gap-2.5">
+                    <ProductImage
+                      src={row?.imageUrl}
+                      name={v}
+                      category={row?.categoryName}
+                      className="w-7 h-7 rounded shrink-0 border border-border"
+                      imageClassName="w-full h-full object-cover p-0"
+                      iconClassName="w-3.5 h-3.5"
+                    />
+                    <span className="font-medium text-foreground">{v}</span>
+                  </div>
+                ),
+                sortable: true,
+              },
               { key: 'sku', label: 'SKU', render: (v) => <span className="font-mono text-xs text-muted-foreground">{v}</span> },
               { key: 'categoryName', label: 'Category', render: (v) => v || '—' },
               { key: 'quantitySold', label: 'Qty Sold', align: 'right', sortable: true },

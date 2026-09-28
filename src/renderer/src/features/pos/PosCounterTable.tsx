@@ -2,6 +2,7 @@ import React from 'react';
 import { ProductDTO } from '../../../../shared/types';
 import { Plus, Package } from 'lucide-react';
 import { formatQuantity, formatUnitPrice } from '../../../../shared/utils/quantity';
+import { ProductImage } from '../../components/common/ProductImage';
 
 export interface PosCounterTableProps {
   products: ProductDTO[];
@@ -62,19 +63,14 @@ export function PosCounterTable({
                   <td className="py-3 px-4">
                     <div className="flex items-center space-x-3">
                       {/* Thumbnail or Avatar square */}
-                      <div className="w-9 h-9 rounded-lg bg-surface-muted border border-border/80 flex items-center justify-center overflow-hidden shrink-0">
-                        {p.imageUrl ? (
-                          <img
-                            src={p.imageUrl}
-                            alt={p.name}
-                            className="w-full h-full object-contain p-1"
-                          />
-                        ) : (
-                          <span className="font-bold text-foreground-subtle text-sm">
-                            {initialLetter}
-                          </span>
-                        )}
-                      </div>
+                      <ProductImage
+                        src={p.imageUrl}
+                        name={p.name}
+                        category={p.categoryName}
+                        className="w-10 h-10 rounded-lg shrink-0 border border-border/80"
+                        imageClassName="w-full h-full object-cover p-0"
+                        iconClassName="w-5 h-5"
+                      />
 
                       {/* SKU */}
                       <span className="font-mono text-[11px] text-foreground-muted truncate max-w-[120px]">

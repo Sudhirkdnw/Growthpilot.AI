@@ -24,6 +24,7 @@ import { SmartAddProductModal } from './SmartAddProductModal';
 import { ProductImportModal } from './ProductImportModal';
 import { exportToCsv } from '../../utils/csvHelper';
 import { formatQuantity, formatUnitPrice } from '../../../../shared/utils/quantity';
+import { ProductImage } from '../../components/common/ProductImage';
 
 export function ProductCatalogView() {
   const session = useAuthStore((s) => s.session);
@@ -55,9 +56,10 @@ export function ProductCatalogView() {
   const [editingProduct, setEditingProduct] = useState<ProductDTO | null>(null);
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState<ProductDTO | null>(null);
 
-  // Modals State: Meta (Category / Brand / Unit)
+  // Modals State: Meta (Category / Subcategory / Brand / Unit)
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
-  const [metaType, setMetaType] = useState<'category' | 'brand' | 'unit'>('category');
+  const [metaType, setMetaType] = useState<'category' | 'subcategory' | 'brand' | 'unit'>('category');
+  const [metaParentCategoryId, setMetaParentCategoryId] = useState<string>('');
   const [editingMetaId, setEditingMetaId] = useState<string | null>(null);
   const [metaName, setMetaName] = useState('');
   const [metaDescription, setMetaDescription] = useState('');
@@ -65,7 +67,7 @@ export function ProductCatalogView() {
   const [metaAllowDecimal, setMetaAllowDecimal] = useState(false);
   const [metaStatus, setMetaStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [deleteConfirmMeta, setDeleteConfirmMeta] = useState<{
-    type: 'category' | 'brand' | 'unit';
+    type: 'category' | 'subcategory' | 'brand' | 'unit';
     id: string;
     name: string;
     productCount: number;
@@ -157,6 +159,7 @@ export function ProductCatalogView() {
         { key: 'salePrice', label: 'Sale Price' },
         { key: 'purchasePrice', label: 'Cost Price' },
         { key: 'categoryName', label: 'Category' },
+        { key: 'subcategoryName', label: 'Subcategory' },
         { key: 'brandName', label: 'Brand' },
         { key: 'unitCode', label: 'Unit' },
         { key: 'taxRate', label: 'Tax Rate (%)' },
@@ -173,6 +176,7 @@ export function ProductCatalogView() {
         salePrice: p.salePrice,
         purchasePrice: p.purchasePrice,
         categoryName: p.categoryName || '',
+        subcategoryName: p.subcategoryName || '',
         brandName: p.brandName || '',
         unitCode: p.unitCode || '',
         taxRate: p.taxRate,
@@ -249,8 +253,9 @@ export function ProductCatalogView() {
   // CATEGORY, BRAND, UNIT MANAGEMENT (MODALS & ACTIONS)
   // --------------------------------------------------------------------------
 
-  const handleOpenAddMeta = (type: 'category' | 'brand' | 'unit') => {
+  const handleOpenAddMeta = (type: 'category' | 'subcategory' | 'brand' | 'unit', parentCatId?: string) => {
     setMetaType(type);
+    setMetaParentCategoryId(parentCatId || (categories[0]?.id || ''));
     setEditingMetaId(null);
     setMetaName('');
     setMetaDescription('');
@@ -260,8 +265,9 @@ export function ProductCatalogView() {
     setIsMetaModalOpen(true);
   };
 
-  const handleOpenEditMeta = (type: 'category' | 'brand' | 'unit', item: any) => {
+  const handleOpenEditMeta = (type: 'category' | 'subcategory' | 'brand' | 'unit', item: any) => {
     setMetaType(type);
+    setMetaParentCategoryId(item.categoryId || '');
     setEditingMetaId(item.id);
     setMetaName(item.name);
     setMetaDescription(item.description || '');
@@ -280,6 +286,13 @@ export function ProductCatalogView() {
         // Update
         if (metaType === 'category') {
           const res = await electronAPI.invoke('categories:update', {
+            id: editingMetaId,
+            data: { name: metaName.trim(), description: metaDescription.trim() || null, status: metaStatus },
+            token: session.token,
+          });
+          if (res.error) throw new Error(res.error);
+        } else if (metaType === 'subcategory') {
+          const res = await electronAPI.invoke('subcategories:update', {
             id: editingMetaId,
             data: { name: metaName.trim(), description: metaDescription.trim() || null, status: metaStatus },
             token: session.token,
@@ -315,6 +328,17 @@ export function ProductCatalogView() {
             token: session.token,
           });
           if (res.error) throw new Error(res.error);
+        } else if (metaType === 'subcategory') {
+          if (!metaParentCategoryId) {
+            throw new Error('Please select a parent category for the subcategory.');
+          }
+          const res = await electronAPI.invoke('subcategories:create', {
+            name: metaName.trim(),
+            categoryId: metaParentCategoryId,
+            description: metaDescription.trim() || null,
+            token: session.token,
+          });
+          if (res.error) throw new Error(res.error);
         } else if (metaType === 'brand') {
           const res = await electronAPI.invoke('brands:create', {
             name: metaName.trim(),
@@ -341,12 +365,14 @@ export function ProductCatalogView() {
     }
   };
 
-  const handleToggleMetaStatus = async (type: 'category' | 'brand' | 'unit', item: any) => {
+  const handleToggleMetaStatus = async (type: 'category' | 'subcategory' | 'brand' | 'unit', item: any) => {
     if (!electronAPI || !session) return;
     const newStatus = item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
       if (type === 'category') {
         await electronAPI.invoke('categories:update', { id: item.id, data: { status: newStatus }, token: session.token });
+      } else if (type === 'subcategory') {
+        await electronAPI.invoke('subcategories:update', { id: item.id, data: { status: newStatus }, token: session.token });
       } else if (type === 'brand') {
         await electronAPI.invoke('brands:update', { id: item.id, data: { status: newStatus }, token: session.token });
       } else {
@@ -367,6 +393,8 @@ export function ProductCatalogView() {
       let res: any;
       if (type === 'category') {
         res = await electronAPI.invoke('categories:delete', { id, token: session.token });
+      } else if (type === 'subcategory') {
+        res = await electronAPI.invoke('subcategories:delete', { id, token: session.token });
       } else if (type === 'brand') {
         res = await electronAPI.invoke('brands:delete', { id, token: session.token });
       } else {
@@ -620,17 +648,14 @@ export function ProductCatalogView() {
                       <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
-                            {p.imageUrl ? (
-                              <img
-                                src={p.imageUrl}
-                                alt={p.name}
-                                className="w-10 h-10 rounded-lg object-cover border border-border shrink-0 bg-surface-elevated"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-lg border border-border/70 bg-surface-elevated/40 flex items-center justify-center shrink-0 text-muted-foreground">
-                                <Package className="w-4 h-4 opacity-40" />
-                              </div>
-                            )}
+                            <ProductImage
+                              src={p.imageUrl}
+                              name={p.name}
+                              category={p.categoryName}
+                              className="w-10 h-10 rounded-lg object-cover border border-border shrink-0 bg-surface-elevated"
+                              imageClassName="w-full h-full object-cover p-0"
+                              iconClassName="w-5 h-5"
+                            />
                             <div className="min-w-0">
                               <div className="font-semibold text-foreground truncate max-w-[200px]">{p.name}</div>
                               <div className="text-[11px] font-mono text-muted-foreground">{p.sku}</div>
@@ -647,7 +672,10 @@ export function ProductCatalogView() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
-                          <div>{p.categoryName || '—'}</div>
+                          <div className="font-medium text-foreground">{p.categoryName || '—'}</div>
+                          {p.subcategoryName && (
+                            <div className="text-[10px] text-primary font-semibold">{p.subcategoryName}</div>
+                          )}
                           <div className="text-[11px] text-muted-foreground">{p.brandName || '—'}</div>
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-foreground">
@@ -783,7 +811,74 @@ export function ProductCatalogView() {
                 <tbody className="divide-y divide-border/60">
                   {categories.map((c) => (
                     <tr key={c.id} className="hover:bg-surface-elevated transition-colors">
-                      <td className="py-3 px-4 font-semibold text-foreground">{c.name}</td>
+                      <td className="py-3 px-4 font-semibold text-foreground">
+                        <div>{c.name}</div>
+                        {c.subcategories && c.subcategories.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {c.subcategories.map((sub) => (
+                              <span
+                                key={sub.id}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-normal border ${
+                                  sub.status === 'ACTIVE'
+                                    ? 'bg-surface-elevated border-border text-foreground'
+                                    : 'bg-surface-muted border-border/50 text-muted-foreground line-through'
+                                }`}
+                              >
+                                <span>{sub.name}</span>
+                                <span className="text-[9px] text-muted-foreground">({sub.productCount ?? 0})</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditMeta('subcategory', sub);
+                                  }}
+                                  className="hover:text-primary p-0.5"
+                                  title="Edit Subcategory"
+                                >
+                                  <Edit2 className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteConfirmMeta({
+                                      type: 'subcategory',
+                                      id: sub.id,
+                                      name: sub.name,
+                                      productCount: sub.productCount ?? 0,
+                                    });
+                                  }}
+                                  className="hover:text-red-400 p-0.5"
+                                  title="Delete Subcategory"
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddMeta('subcategory', c.id)}
+                              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors"
+                              title="Add subcategory to this category"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                              <span>Subcategory</span>
+                            </button>
+                          </div>
+                        )}
+                        {(!c.subcategories || c.subcategories.length === 0) && (
+                          <div className="mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddMeta('subcategory', c.id)}
+                              className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline font-normal"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Add Subcategory</span>
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-muted-foreground">{c.description || '—'}</td>
                       <td className="py-3 px-4 text-center font-mono">
                         <span className="bg-surface-elevated px-2 py-0.5 rounded text-foreground">
@@ -1132,7 +1227,25 @@ export function ProductCatalogView() {
                 />
               </div>
 
-              {metaType === 'category' && (
+              {metaType === 'subcategory' && (
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Parent Category *</label>
+                  <select
+                    value={metaParentCategoryId}
+                    onChange={(e) => setMetaParentCategoryId(e.target.value)}
+                    disabled={Boolean(editingMetaId)}
+                    className="w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary disabled:opacity-60"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(metaType === 'category' || metaType === 'subcategory') && (
                 <div>
                   <label className="block text-xs font-semibold text-muted-foreground mb-1">Description (Optional)</label>
                   <input

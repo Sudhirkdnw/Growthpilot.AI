@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { SaleReturnableDetailsDTO, RefundMethod, InvoiceDocumentDTO } from '../../../../shared/types';
 import { InvoicePreviewModal } from '../invoice/InvoicePreviewModal';
+import { ProductImage } from '../../components/common/ProductImage';
 
 interface SalesReturnModalProps {
   saleId: string;
@@ -342,9 +343,19 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
                             }`}
                           >
                             <td className="p-3">
-                              <div className="font-semibold text-foreground">{item.productName}</div>
-                              <div className="text-[10px] font-mono text-muted-foreground">
-                                SKU: {item.sku} {item.unitCode ? `(${item.unitCode})` : ''}
+                              <div className="flex items-center gap-2.5">
+                                <ProductImage
+                                  name={item.productName}
+                                  className="w-8 h-8 rounded-lg shrink-0 border border-border"
+                                  imageClassName="w-full h-full object-cover p-0"
+                                  iconClassName="w-4 h-4"
+                                />
+                                <div>
+                                  <div className="font-semibold text-foreground">{item.productName}</div>
+                                  <div className="text-[10px] font-mono text-muted-foreground">
+                                    SKU: {item.sku} {item.unitCode ? `(${item.unitCode})` : ''}
+                                  </div>
+                                </div>
                               </div>
                             </td>
                             <td className="p-3 text-center font-mono">{item.soldQuantity}</td>

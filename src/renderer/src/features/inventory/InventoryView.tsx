@@ -28,6 +28,7 @@ import {
   StockReconciliationDTO,
 } from '../../../../shared/types';
 import { useAuthStore } from '../../stores/authStore';
+import { ProductImage } from '../../components/common/ProductImage';
 
 export function InventoryView() {
   const session = useAuthStore((s) => s.session);
@@ -734,7 +735,17 @@ export function InventoryView() {
                     return (
                       <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
                         <td className="py-3 px-4 font-sans font-semibold text-foreground">
-                          {p.name}
+                          <div className="flex items-center gap-2.5">
+                            <ProductImage
+                              src={p.imageUrl}
+                              name={p.name}
+                              category={p.categoryName}
+                              className="w-8 h-8 rounded-lg shrink-0 border border-border"
+                              imageClassName="w-full h-full object-cover p-0"
+                              iconClassName="w-4 h-4"
+                            />
+                            <span>{p.name}</span>
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
                           <div>{p.sku}</div>
@@ -929,6 +940,25 @@ export function InventoryView() {
                     </option>
                   ))}
                 </select>
+
+                {selectedProduct && (
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-surface-elevated/60 border border-border flex items-center gap-3">
+                    <ProductImage
+                      src={selectedProduct.imageUrl}
+                      name={selectedProduct.name}
+                      category={selectedProduct.categoryName}
+                      className="w-10 h-10 rounded-lg shrink-0 border border-border"
+                      imageClassName="w-full h-full object-cover p-0"
+                      iconClassName="w-5 h-5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-foreground truncate">{selectedProduct.name}</div>
+                      <div className="text-[11px] text-muted-foreground font-mono">
+                        SKU: {selectedProduct.sku} | In Stock: <span className="text-primary font-bold">{selectedProduct.currentStock} {selectedProduct.unitCode}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Adjustment Direction */}

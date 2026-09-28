@@ -337,6 +337,7 @@ export class InventoryService {
         sku: p.sku,
         barcode: p.barcode,
         categoryName: p.category?.name || null,
+        imageUrl: p.imageUrl || null,
         currentStock: stock,
         reorderLevel: reorder,
         unitCode: p.unit?.shortCode || 'PCS',

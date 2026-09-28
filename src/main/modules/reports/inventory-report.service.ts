@@ -35,11 +35,15 @@ export class InventoryReportService {
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
-    if (query.search) {
+    if (query.search && query.search.trim()) {
+      const q = query.search.trim();
       where.OR = [
-        { name: { contains: query.search } },
-        { sku: { contains: query.search } },
-        { barcode: { contains: query.search } },
+        { name: { contains: q } },
+        { sku: { contains: q } },
+        { barcode: { contains: q } },
+        { category: { name: { contains: q } } },
+        { subcategory: { name: { contains: q } } },
+        { brand: { name: { contains: q } } },
       ];
     }
     if (query.categoryId) where.categoryId = query.categoryId;
@@ -49,6 +53,7 @@ export class InventoryReportService {
       where,
       include: {
         category: { select: { name: true } },
+        subcategory: { select: { name: true } },
         brand: { select: { name: true } },
         unit: { select: { shortCode: true } },
       },
@@ -70,6 +75,7 @@ export class InventoryReportService {
         sku: p.sku,
         barcode: p.barcode,
         categoryName: p.category?.name || null,
+        subcategoryName: p.subcategory?.name || null,
         brandName: p.brand?.name || null,
         unitCode: p.unit.shortCode,
         purchasePrice: n(p.purchasePrice),
@@ -139,6 +145,7 @@ export class InventoryReportService {
         sku: p.sku,
         barcode: p.barcode,
         categoryName: p.category?.name || null,
+        imageUrl: p.imageUrl || null,
         currentStock: Math.round(Number(p.currentStock) * 1000) / 1000,
         reorderLevel: Math.round(Number(p.reorderLevel) * 1000) / 1000,
         unitCode: p.unit.shortCode,

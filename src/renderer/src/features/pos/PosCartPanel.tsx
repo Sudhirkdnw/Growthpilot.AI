@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { CustomerDTO } from '../../../../shared/types';
 import { PosCartItem } from './PosBillingView';
+import { ProductImage } from '../../components/common/ProductImage';
 
 export interface PosCartPanelProps {
   cart: PosCartItem[];
@@ -154,7 +155,15 @@ export function PosCartPanel({
                     isExcess ? 'bg-danger-bg border border-danger-border' : 'hover:bg-surface-hover/60'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2.5">
+                    <ProductImage
+                      src={item.imageUrl}
+                      name={item.productName}
+                      category={item.categoryName}
+                      className="w-10 h-10 rounded-lg shrink-0 border border-border/70"
+                      imageClassName="w-full h-full object-cover p-0"
+                      iconClassName="w-4 h-4"
+                    />
                     <div className="flex-1 min-w-0">
                       <h5 className="text-xs font-semibold text-foreground truncate" title={item.productName}>
                         {item.productName}

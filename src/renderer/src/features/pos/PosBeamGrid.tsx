@@ -2,6 +2,7 @@ import React from 'react';
 import { ProductDTO } from '../../../../shared/types';
 import { Package, Plus } from 'lucide-react';
 import { formatQuantity, formatUnitPrice } from '../../../../shared/utils/quantity';
+import { ProductImage } from '../../components/common/ProductImage';
 
 export interface PosBeamGridProps {
   products: ProductDTO[];
@@ -41,17 +42,14 @@ export function PosBeamGrid({
             >
               {/* Top Media & Badges */}
               <div className="relative w-full aspect-square rounded-lg bg-surface-muted overflow-hidden flex items-center justify-center mb-2.5">
-                {p.imageUrl ? (
-                  <img
-                    src={p.imageUrl}
-                    alt={p.name}
-                    className="w-full h-full object-contain p-2 transition-transform duration-200 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-3xl font-extrabold text-foreground-subtle/50 font-sans">
-                    {initialLetter}
-                  </div>
-                )}
+                <ProductImage
+                  src={p.imageUrl}
+                  name={p.name}
+                  category={p.categoryName}
+                  className="w-full h-full rounded-lg border-0"
+                  imageClassName="w-full h-full object-cover p-0 transition-transform duration-200 group-hover:scale-105"
+                  iconClassName="w-10 h-10"
+                />
 
                 {/* Top Badges */}
                 <div className="absolute top-1.5 left-1.5 flex flex-col gap-1 items-start">

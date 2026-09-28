@@ -22,7 +22,7 @@ import {
   Link as LinkIcon,
   Trash2,
 } from 'lucide-react';
-import { ProductDTO, CategoryDTO, BrandDTO, UnitDTO } from '../../../../shared/types';
+import { ProductDTO, CategoryDTO, BrandDTO, UnitDTO, SubcategoryDTO } from '../../../../shared/types';
 import { useAuthStore } from '../../stores/authStore';
 
 interface SmartAddProductModalProps {
@@ -61,6 +61,8 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
   const [unitId, setUnitId] = useState<string>('');
   const [allowSellByAmount, setAllowSellByAmount] = useState<boolean>(false);
   const [categoryId, setCategoryId] = useState<string>('');
+  const [subcategoryId, setSubcategoryId] = useState<string>('');
+  const [availableSubcategories, setAvailableSubcategories] = useState<SubcategoryDTO[]>([]);
   const [brandId, setBrandId] = useState<string>('');
 
   // Advanced / Collapsible State
@@ -88,10 +90,32 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
   const [successBanner, setSuccessBanner] = useState<{ name: string; sku: string; price: number } | null>(null);
 
   // Inline Meta Creator State
-  const [inlineCreator, setInlineCreator] = useState<'category' | 'brand' | null>(null);
+  const [inlineCreator, setInlineCreator] = useState<'category' | 'subcategory' | 'brand' | null>(null);
   const [inlineName, setInlineName] = useState('');
   const [inlineSubmitting, setInlineSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
+
+  // ----------------------------------------------------
+  // Subcategories loader for active Category
+  // ----------------------------------------------------
+  useEffect(() => {
+    if (!categoryId || !electronAPI) {
+      setAvailableSubcategories([]);
+      setSubcategoryId('');
+      return;
+    }
+    electronAPI
+      .invoke('subcategories:list', { categoryId, includeInactive: false })
+      .then((res: any) => {
+        if (Array.isArray(res)) {
+          setAvailableSubcategories(res);
+          if (editingProduct?.subcategoryId && editingProduct.categoryId === categoryId) {
+            setSubcategoryId(editingProduct.subcategoryId);
+          }
+        }
+      })
+      .catch(() => setAvailableSubcategories([]));
+  }, [categoryId, electronAPI, editingProduct]);
 
   // ----------------------------------------------------
   // Smart Default Unit Resolver
@@ -144,6 +168,7 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         setUnitId(editingProduct.unitId);
         setAllowSellByAmount(editingProduct.allowSellByAmount ?? false);
         setCategoryId(editingProduct.categoryId || '');
+        setSubcategoryId(editingProduct.subcategoryId || '');
         setBrandId(editingProduct.brandId || '');
         setSku(editingProduct.sku);
         setIsCustomSku(true);
@@ -180,6 +205,7 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         if (!preserveContext) {
           setUnitId(getSmartDefaultUnitId());
           setCategoryId('');
+          setSubcategoryId('');
           setBrandId('');
           setTaxRate(0);
           setIsMoreDetailsOpen(false);
@@ -333,6 +359,19 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         if (res.error) throw new Error(res.error);
         await onDependenciesChange?.();
         setCategoryId(res.id);
+      } else if (inlineCreator === 'subcategory') {
+        if (!categoryId) {
+          throw new Error('Please select a Category first before creating a subcategory.');
+        }
+        const res = await electronAPI.invoke('subcategories:create', {
+          name: inlineName.trim(),
+          categoryId,
+          description: null,
+          token: session.token,
+        });
+        if (res.error) throw new Error(res.error);
+        setAvailableSubcategories((prev) => [...prev, res]);
+        setSubcategoryId(res.id);
       } else if (inlineCreator === 'brand') {
         const res = await electronAPI.invoke('brands:create', {
           name: inlineName.trim(),
@@ -418,6 +457,7 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
         sku: finalSku,
         barcode: finalBarcode,
         categoryId: categoryId || null,
+        subcategoryId: subcategoryId || null,
         brandId: brandId || null,
         unitId: selectedUnit,
         purchasePrice: purchasePrice ? parseFloat(purchasePrice) || 0 : 0,
@@ -717,8 +757,8 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
               </div>
             </div>
 
-            {/* Category & Brand (Optional, with Inline Creation) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            {/* Category, Subcategory & Brand (Optional, with Inline Creation) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               {/* Category */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -740,13 +780,52 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
                 </div>
                 <select
                   value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value);
+                    setSubcategoryId('');
+                  }}
                   className="w-full bg-input border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition"
                 >
                   <option value="">Uncategorized (None)</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Subcategory */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Subcategory (Optional)
+                  </label>
+                  {categoryId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInlineCreator(inlineCreator === 'subcategory' ? null : 'subcategory');
+                        setInlineName('');
+                        setInlineError(null);
+                      }}
+                      className="text-[11px] font-semibold text-primary hover:underline flex items-center space-x-0.5"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>New</span>
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={subcategoryId}
+                  onChange={(e) => setSubcategoryId(e.target.value)}
+                  disabled={!categoryId}
+                  className="w-full bg-input border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">{categoryId ? 'None (No Subcategory)' : 'Select Category First'}</option>
+                  {availableSubcategories.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
                     </option>
                   ))}
                 </select>
@@ -786,12 +865,12 @@ export const SmartAddProductModal: React.FC<SmartAddProductModalProps> = ({
               </div>
             </div>
 
-            {/* Inline Category/Brand Creator Drawer */}
+            {/* Inline Category/Brand/Subcategory Creator Drawer */}
             {inlineCreator && (
               <div className="p-3 bg-surface-elevated/80 border border-primary/30 rounded-xl space-y-2 animate-in fade-in zoom-in-95">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-foreground">
-                    Quick Create {inlineCreator === 'category' ? 'Category' : 'Brand'}
+                    Quick Create {inlineCreator === 'category' ? 'Category' : inlineCreator === 'subcategory' ? 'Subcategory' : 'Brand'}
                   </span>
                   <button
                     type="button"

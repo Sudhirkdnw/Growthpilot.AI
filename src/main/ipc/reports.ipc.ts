@@ -59,6 +59,20 @@ export function registerReportsIpc() {
     );
   });
 
+  ipcMain.handle('reports:getSalesByCategory', async (_, query) => {
+    const params = new URLSearchParams();
+    if (query?.period) params.append('period', query.period);
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    const token = query?.token;
+    return await dispatchFastify(
+      'GET',
+      `/api/reports/sales/by-category?${params.toString()}`,
+      undefined,
+      token ? { authorization: token } : undefined
+    );
+  });
+
   ipcMain.handle('reports:getSalesByCustomer', async (_, query) => {
     const params = new URLSearchParams();
     if (query?.period) params.append('period', query.period);

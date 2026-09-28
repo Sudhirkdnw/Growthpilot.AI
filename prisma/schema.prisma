@@ -60,15 +60,33 @@ model AuditLog {
 // ----------------------------------------------------
 
 model Category {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  description   String?
+  status        String        @default("ACTIVE")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  products      Product[]
+  subcategories Subcategory[]
+
+  @@map("categories")
+}
+
+model Subcategory {
   id          String    @id @default(uuid())
-  name        String    @unique
+  name        String
+  categoryId  String
   description String?
   status      String    @default("ACTIVE")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   products    Product[]
 
-  @@map("categories")
+  @@unique([categoryId, name])
+  @@index([categoryId])
+  @@map("subcategories")
 }
 
 model Brand {
@@ -103,6 +121,7 @@ model Product {
   sku               String             @unique
   barcode           String?            @unique
   categoryId        String?
+  subcategoryId     String?
   brandId           String?
   unitId            String
   purchasePrice     Decimal            @default(0) // Decimal representation
@@ -118,6 +137,7 @@ model Product {
   updatedAt         DateTime           @updatedAt
 
   category      Category?          @relation(fields: [categoryId], references: [id])
+  subcategory   Subcategory?       @relation(fields: [subcategoryId], references: [id])
   brand         Brand?             @relation(fields: [brandId], references: [id])
   unit          Unit               @relation(fields: [unitId], references: [id])
 
@@ -131,6 +151,7 @@ model Product {
   @@index([name])
   @@index([status])
   @@index([categoryId])
+  @@index([subcategoryId])
   @@map("products")
 }
 

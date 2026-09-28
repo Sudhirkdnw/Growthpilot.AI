@@ -69,6 +69,8 @@ export interface PosCartItem {
   discount: number;
   taxRate: number;
   lineTotal: number;
+  imageUrl?: string | null;
+  categoryName?: string | null;
 }
 
 export interface PosBillingViewProps {
@@ -402,6 +404,8 @@ export function PosBillingView({
           discount: 0,
           taxRate,
           lineTotal,
+          imageUrl: product.imageUrl,
+          categoryName: product.categoryName,
         };
         return [newItem, ...prev];
       }
@@ -894,13 +898,16 @@ export function PosBillingView({
       }
     }
 
-    // Search query filter
+    // Search query filter: Name, SKU, Barcode, Category, Subcategory, Brand
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const matchName = p.name.toLowerCase().includes(q);
       const matchSku = p.sku.toLowerCase().includes(q);
       const matchBarcode = p.barcode ? p.barcode.toLowerCase().includes(q) : false;
-      if (!matchName && !matchSku && !matchBarcode) return false;
+      const matchCategory = p.categoryName ? p.categoryName.toLowerCase().includes(q) : false;
+      const matchSubcategory = p.subcategoryName ? p.subcategoryName.toLowerCase().includes(q) : false;
+      const matchBrand = p.brandName ? p.brandName.toLowerCase().includes(q) : false;
+      if (!matchName && !matchSku && !matchBarcode && !matchCategory && !matchSubcategory && !matchBrand) return false;
     }
 
     return true;

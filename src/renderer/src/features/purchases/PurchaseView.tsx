@@ -32,11 +32,14 @@ import {
 } from '../../../../shared/types';
 import { InvoicePreviewModal } from '../invoice/InvoicePreviewModal';
 import { Printer } from 'lucide-react';
+import { ProductImage } from '../../components/common/ProductImage';
 
 interface PurchaseCartItem {
   productId: string;
   productName: string;
   sku: string;
+  imageUrl?: string | null;
+  categoryName?: string | null;
   quantity: number;
   purchasePrice: number;
   discount: number;
@@ -184,6 +187,8 @@ export function PurchaseView() {
           productId: product.id,
           productName: product.name,
           sku: product.sku,
+          imageUrl: product.imageUrl,
+          categoryName: product.categoryName,
           quantity: 1,
           purchasePrice: product.purchasePrice || 0,
           discount: 0,
@@ -544,9 +549,19 @@ export function PurchaseView() {
                         onClick={() => addProductToCart(p)}
                         className="w-full text-left px-4 py-2.5 hover:bg-surface-elevated flex items-center justify-between text-xs"
                       >
-                        <div>
-                          <div className="font-semibold text-foreground">{p.name}</div>
-                          <div className="text-muted-foreground font-mono">SKU: {p.sku} | In Stock: {p.currentStock}</div>
+                        <div className="flex items-center gap-3">
+                          <ProductImage
+                            src={p.imageUrl}
+                            name={p.name}
+                            category={p.categoryName}
+                            className="w-8 h-8 rounded-lg shrink-0 border border-border"
+                            imageClassName="w-full h-full object-cover p-0"
+                            iconClassName="w-4 h-4"
+                          />
+                          <div>
+                            <div className="font-semibold text-foreground">{p.name}</div>
+                            <div className="text-muted-foreground font-mono">SKU: {p.sku} | In Stock: {p.currentStock}</div>
+                          </div>
                         </div>
                         <div className="text-primary font-semibold font-mono">
                           {currencySymbol}{p.purchasePrice.toFixed(2)}
@@ -585,8 +600,20 @@ export function PurchaseView() {
                       {cartItems.map((item, idx) => (
                         <tr key={item.productId} className="hover:bg-surface-muted">
                           <td className="py-2 px-3">
-                            <div className="font-semibold text-foreground">{item.productName}</div>
-                            <div className="text-[10px] text-muted-foreground font-mono">SKU: {item.sku}</div>
+                            <div className="flex items-center gap-3">
+                              <ProductImage
+                                src={item.imageUrl}
+                                name={item.productName}
+                                category={item.categoryName}
+                                className="w-9 h-9 rounded-lg shrink-0 border border-border"
+                                imageClassName="w-full h-full object-cover p-0"
+                                iconClassName="w-4 h-4"
+                              />
+                              <div>
+                                <div className="font-semibold text-foreground">{item.productName}</div>
+                                <div className="text-[10px] text-muted-foreground font-mono">SKU: {item.sku}</div>
+                              </div>
+                            </div>
                           </td>
                           <td className="py-2 px-3">
                             <input

@@ -10,6 +10,19 @@ export const UpdateCategorySchema = CreateCategorySchema.partial().extend({
   status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
 });
 
+export const CreateSubcategorySchema = z.object({
+  name: z.string().trim().min(1, 'Subcategory name is required').max(100),
+  categoryId: z.string().uuid('Valid category is required'),
+  description: z.string().trim().max(255).optional().nullable(),
+});
+
+export const UpdateSubcategorySchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  categoryId: z.string().uuid().optional(),
+  description: z.string().trim().max(255).optional().nullable(),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+});
+
 export const CreateBrandSchema = z.object({
   name: z.string().trim().min(1, 'Brand name is required').max(100),
 });
@@ -37,6 +50,7 @@ export const CreateProductSchema = z.object({
   sku: z.string().trim().max(50).optional().nullable(),
   barcode: z.string().trim().max(50).optional().nullable(),
   categoryId: z.string().uuid('Invalid category ID').optional().nullable(),
+  subcategoryId: z.string().uuid('Invalid subcategory ID').optional().nullable(),
   brandId: z.string().uuid('Invalid brand ID').optional().nullable(),
   unitId: z.string().uuid('Valid unit is required'),
   purchasePrice: z.number().min(0, 'Purchase price must be positive or zero').default(0),
@@ -56,6 +70,7 @@ export const UpdateProductSchema = CreateProductSchema.omit({ openingStock: true
 export const ProductQuerySchema = z.object({
   search: z.string().optional(),
   categoryId: z.string().optional(),
+  subcategoryId: z.string().optional(),
   brandId: z.string().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ACTIVE'),
   page: z.number().int().min(1).default(1),

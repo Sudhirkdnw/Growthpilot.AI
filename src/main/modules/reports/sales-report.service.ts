@@ -2,6 +2,7 @@ import { getPrismaClient } from '../../database/client';
 import { reportService } from './report.service';
 import {
   SalesReportDTO,
+  SalesByCategoryDTO,
   SalesByProductDTO,
   SalesByCustomerDTO,
   SalesByPaymentMethodDTO,
@@ -287,6 +288,155 @@ export class SalesReportService {
     });
 
     // Sort by grossRevenue descending
+    data.sort((a, b) => b.grossRevenue - a.grossRevenue);
+
+    return {
+      period: periodLabel,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      data,
+      totals,
+    };
+  }
+
+  async getSalesByCategory(query: {
+    period?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<SalesByCategoryDTO> {
+    const { startDate, endDate, periodLabel } = reportService.resolveDateRange({
+      period: query.period,
+      startDate: query.startDate,
+      endDate: query.endDate,
+    });
+
+    const saleItems = await this.prisma.saleItem.findMany({
+      where: {
+        sale: {
+          status: 'POSTED',
+          saleDate: { gte: startDate, lte: endDate },
+        },
+      },
+      include: {
+        product: {
+          include: {
+            category: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    const returnItems = await this.prisma.salesReturnItem.findMany({
+      where: {
+        salesReturn: {
+          status: 'POSTED',
+          returnDate: { gte: startDate, lte: endDate },
+        },
+        saleItem: { isNot: null },
+      },
+      include: {
+        saleItem: {
+          include: {
+            product: {
+              include: {
+                category: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const map = new Map<
+      string,
+      {
+        categoryId: string;
+        categoryName: string;
+        productIds: Set<string>;
+        quantitySold: number;
+        grossRevenue: number;
+        totalDiscount: number;
+        totalTax: number;
+        historicalCogs: number;
+        salesReturnValue: number;
+      }
+    >();
+
+    const UNCATEGORIZED_ID = '__UNCATEGORIZED__';
+    for (const item of saleItems) {
+      const catId = item.product.categoryId || UNCATEGORIZED_ID;
+      const catName = item.product.category?.name || 'Uncategorized';
+      if (!map.has(catId)) {
+        map.set(catId, {
+          categoryId: catId,
+          categoryName: catName,
+          productIds: new Set<string>(),
+          quantitySold: 0,
+          grossRevenue: 0,
+          totalDiscount: 0,
+          totalTax: 0,
+          historicalCogs: 0,
+          salesReturnValue: 0,
+        });
+      }
+      const row = map.get(catId)!;
+      row.productIds.add(item.productId);
+      row.quantitySold += Number(item.quantity);
+      row.grossRevenue += Number(item.lineTotal);
+      row.totalDiscount += Number(item.discount);
+      row.totalTax += Number(item.taxAmount);
+      row.historicalCogs += Number(item.quantity) * Number(item.costPrice);
+    }
+
+    for (const ret of returnItems) {
+      const catId = ret.saleItem?.product?.categoryId || UNCATEGORIZED_ID;
+      if (map.has(catId)) {
+        const row = map.get(catId)!;
+        row.salesReturnValue += Number(ret.lineTotal);
+      }
+    }
+
+    let totals = {
+      itemCount: 0,
+      quantitySold: 0,
+      grossRevenue: 0,
+      salesReturnValue: 0,
+      netRevenue: 0,
+      historicalCogs: 0,
+      grossProfit: 0,
+    };
+
+    const data = Array.from(map.values()).map((row) => {
+      const netRevenue = Math.max(0, Math.round((row.grossRevenue - row.salesReturnValue) * 100) / 100);
+      const avgCostPerUnit = row.quantitySold > 0 ? row.historicalCogs / row.quantitySold : 0;
+      const netCogs = Math.max(0, Math.round(row.historicalCogs * 100) / 100);
+      const grossProfit = Math.round((netRevenue - netCogs) * 100) / 100;
+      const grossMarginPercent = netRevenue > 0 ? Math.round((grossProfit / netRevenue) * 10000) / 100 : 0;
+
+      totals.itemCount += row.productIds.size;
+      totals.quantitySold = roundQuantity(totals.quantitySold + row.quantitySold, 4);
+      totals.grossRevenue = roundMoney(totals.grossRevenue + row.grossRevenue);
+      totals.salesReturnValue = roundMoney(totals.salesReturnValue + row.salesReturnValue);
+      totals.netRevenue = roundMoney(totals.netRevenue + netRevenue);
+      totals.historicalCogs = roundMoney(totals.historicalCogs + netCogs);
+      totals.grossProfit = roundMoney(totals.grossProfit + grossProfit);
+
+      return {
+        categoryId: row.categoryId,
+        categoryName: row.categoryName,
+        itemCount: row.productIds.size,
+        quantitySold: roundQuantity(row.quantitySold, 4),
+        grossRevenue: roundMoney(row.grossRevenue),
+        totalDiscount: roundMoney(row.totalDiscount),
+        totalTax: roundMoney(row.totalTax),
+        salesReturnValue: roundMoney(row.salesReturnValue),
+        netRevenue,
+        historicalCogs: netCogs,
+        grossProfit,
+        grossMarginPercent,
+      };
+    });
+
     data.sort((a, b) => b.grossRevenue - a.grossRevenue);
 
     return {

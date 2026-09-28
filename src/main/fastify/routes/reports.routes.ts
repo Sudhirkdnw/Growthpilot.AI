@@ -80,6 +80,22 @@ export const reportRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     }
   });
 
+  fastify.get('/api/reports/sales/by-category', async (request, reply) => {
+    const token = getToken(request);
+    try {
+      AuthGuard.verifySession(token);
+      const q = getQ(request);
+      return await salesReportService.getSalesByCategory({
+        period: q.period,
+        startDate: q.startDate,
+        endDate: q.endDate,
+      });
+    } catch (err: any) {
+      reply.status(err?.message?.includes('Authentication') ? 401 : 400);
+      return { error: err?.message || 'Failed to fetch sales by category' };
+    }
+  });
+
   fastify.get('/api/reports/sales/by-customer', async (request, reply) => {
     const token = getToken(request);
     try {

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { CustomerDTO, PaymentMethod } from '../../../../shared/types';
 import { PosCartItem } from './PosBillingView';
+import { ProductImage } from '../../components/common/ProductImage';
 
 // ============================================================================
 // 1. CALCULATOR MODAL (Fully Keyboard & Numpad Responsive)
@@ -482,6 +483,22 @@ export function HeldOrdersModal({
                       {currencySymbol}
                       {ho.totalDue.toFixed(2)}
                     </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {ho.items.slice(0, 5).map((i) => (
+                      <ProductImage
+                        key={i.productId}
+                        src={i.imageUrl}
+                        name={i.productName}
+                        category={i.categoryName}
+                        className="w-6 h-6 rounded-md shrink-0 border border-border"
+                        imageClassName="w-full h-full object-cover p-0"
+                        iconClassName="w-3 h-3"
+                      />
+                    ))}
+                    {ho.items.length > 5 && (
+                      <span className="text-[10px] text-muted-foreground font-mono font-bold">+{ho.items.length - 5}</span>
+                    )}
                   </div>
                 </div>
 

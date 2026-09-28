@@ -19,6 +19,27 @@ export function registerProductIpc() {
     return await dispatchFastify('DELETE', `/api/categories/${id}`, null, { authorization: token });
   });
 
+  // Subcategories
+  ipcMain.handle('subcategories:list', async (_, { categoryId, includeInactive } = {}) => {
+    const params = new URLSearchParams();
+    if (includeInactive) params.append('includeInactive', 'true');
+    if (categoryId) params.append('categoryId', categoryId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return await dispatchFastify('GET', `/api/subcategories${qs}`);
+  });
+
+  ipcMain.handle('subcategories:create', async (_, { name, categoryId, description, token }) => {
+    return await dispatchFastify('POST', '/api/subcategories', { name, categoryId, description, token }, { authorization: token });
+  });
+
+  ipcMain.handle('subcategories:update', async (_, { id, data, token }) => {
+    return await dispatchFastify('PUT', `/api/subcategories/${id}`, { ...data, token }, { authorization: token });
+  });
+
+  ipcMain.handle('subcategories:delete', async (_, { id, token }) => {
+    return await dispatchFastify('DELETE', `/api/subcategories/${id}`, null, { authorization: token });
+  });
+
   // Brands
   ipcMain.handle('brands:list', async (_, includeInactive) => {
     return await dispatchFastify('GET', `/api/brands?includeInactive=${includeInactive ? 'true' : 'false'}`);
@@ -58,6 +79,7 @@ export function registerProductIpc() {
     const params = new URLSearchParams();
     if (query?.search) params.append('search', query.search);
     if (query?.categoryId) params.append('categoryId', query.categoryId);
+    if (query?.subcategoryId) params.append('subcategoryId', query.subcategoryId);
     if (query?.brandId) params.append('brandId', query.brandId);
     if (query?.status) params.append('status', query.status);
     if (query?.page) params.append('page', String(query.page));

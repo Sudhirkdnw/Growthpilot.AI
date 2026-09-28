@@ -48,6 +48,50 @@ export const masterDataRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
   });
 
   // --------------------------------------------------------------------------
+  // SUBCATEGORIES
+  // --------------------------------------------------------------------------
+  fastify.get('/api/subcategories', async (request) => {
+    const includeInactive = (request.query as any)?.includeInactive === 'true';
+    const categoryId = (request.query as any)?.categoryId as string | undefined;
+    return await categoryBrandUnitService.listSubcategories(categoryId, includeInactive);
+  });
+
+  fastify.post('/api/subcategories', async (request, reply) => {
+    const token = (request.headers['authorization'] || (request.body as any)?.token) as string;
+    try {
+      const session = AuthGuard.verifySession(token);
+      return await categoryBrandUnitService.createSubcategory(request.body as any, session.user.id);
+    } catch (err: any) {
+      reply.status(400);
+      return { error: err?.message || 'Failed to create subcategory' };
+    }
+  });
+
+  fastify.put('/api/subcategories/:id', async (request, reply) => {
+    const token = (request.headers['authorization'] || (request.body as any)?.token) as string;
+    const { id } = request.params as { id: string };
+    try {
+      const session = AuthGuard.verifySession(token);
+      return await categoryBrandUnitService.updateSubcategory(id, request.body as any, session.user.id);
+    } catch (err: any) {
+      reply.status(400);
+      return { error: err?.message || 'Failed to update subcategory' };
+    }
+  });
+
+  fastify.delete('/api/subcategories/:id', async (request, reply) => {
+    const token = (request.headers['authorization'] || (request.query as any)?.token) as string;
+    const { id } = request.params as { id: string };
+    try {
+      const session = AuthGuard.verifySession(token);
+      return await categoryBrandUnitService.deleteSubcategory(id, session.user.id);
+    } catch (err: any) {
+      reply.status(400);
+      return { error: err?.message || 'Failed to delete subcategory' };
+    }
+  });
+
+  // --------------------------------------------------------------------------
   // BRANDS
   // --------------------------------------------------------------------------
   fastify.get('/api/brands', async (request) => {

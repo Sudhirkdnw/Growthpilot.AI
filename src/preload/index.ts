@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'categories:create',
       'categories:update',
       'categories:delete',
+      'subcategories:list',
+      'subcategories:create',
+      'subcategories:update',
+      'subcategories:delete',
       'brands:list',
       'brands:create',
       'brands:update',
@@ -119,6 +123,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // Phase 11 — Reports & BI
       'reports:getDashboard',
       'reports:getSales',
+      'reports:getSalesByCategory',
       'reports:getSalesByProduct',
       'reports:getSalesByCustomer',
       'reports:getSalesByPaymentMethod',

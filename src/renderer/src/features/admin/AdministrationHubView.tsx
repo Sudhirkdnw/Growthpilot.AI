@@ -1024,21 +1024,21 @@ export function AdministrationHubView() {
                       <div className="flex items-center space-x-2">
                         <input
                           type="color"
-                          value={formData.branding.accentTextColor || (formData.branding.theme === 'light' ? '#0F172A' : '#F8FAFC')}
-                          onChange={(e) => updateField('branding.accentTextColor', e.target.value)}
+                          value={formData.branding.textColor || (formData.branding.theme?.toLowerCase() === 'light' ? '#0F172A' : '#F8FAFC')}
+                          onChange={(e) => updateField('branding.textColor', e.target.value)}
                           className="w-10 h-10 rounded border border-border bg-surface cursor-pointer p-0.5"
                         />
                         <input
                           type="text"
-                          placeholder="Auto-calculated WCAG"
-                          value={formData.branding.accentTextColor || ''}
-                          onChange={(e) => updateField('branding.accentTextColor', e.target.value)}
+                          placeholder={formData.branding.theme?.toLowerCase() === 'light' ? '#0F172A (Auto Black)' : '#F8FAFC (Auto White)'}
+                          value={formData.branding.textColor || ''}
+                          onChange={(e) => updateField('branding.textColor', e.target.value)}
                           className="flex-1 bg-input border border-input-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary"
                         />
-                        {formData.branding.accentTextColor && (
+                        {formData.branding.textColor && (
                           <button
                             type="button"
-                            onClick={() => updateField('branding.accentTextColor', '')}
+                            onClick={() => updateField('branding.textColor', '')}
                             className="px-2 py-1.5 rounded text-[10px] text-foreground-muted hover:text-foreground border border-border"
                           >
                             Reset
@@ -1046,7 +1046,7 @@ export function AdministrationHubView() {
                         )}
                       </div>
                       <p className="text-[10px] text-foreground-muted mt-1">
-                        Leave blank for automatic high-contrast hierarchy or supply custom primary hex.
+                        Auto: Black (#0F172A) in Light theme, White (#F8FAFC) in Dark theme.
                       </p>
                     </div>
 

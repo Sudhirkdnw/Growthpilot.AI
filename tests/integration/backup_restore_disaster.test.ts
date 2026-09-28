@@ -266,17 +266,17 @@ describe('Phase 13: Backup, Restore & Disaster Recovery Test Suite', () => {
         data: { name: 'Piece Test', shortCode: 'PCT', allowDecimal: false },
       });
 
-      const productA = await prisma.product.create({
-        data: {
+      const { product: productA } = await productService.createProduct(
+        {
           name: 'State A Test Product',
           sku: testSku,
           unitId: unit.id,
           purchasePrice: 50,
           salePrice: 100,
-          currentStock: 100,
           openingStock: 100,
         },
-      });
+        adminUserId
+      );
 
       const customerPhone = `99${Date.now().toString().slice(-8)}`;
       const customerA = await prisma.customer.create({

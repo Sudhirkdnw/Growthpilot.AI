@@ -33,17 +33,21 @@ export class ProductService {
       where.status = validated.status;
     }
 
-    // Category & Brand filters
+    // Category, Subcategory & Brand filters
     if (validated.categoryId) where.categoryId = validated.categoryId;
+    if (validated.subcategoryId) where.subcategoryId = validated.subcategoryId;
     if (validated.brandId) where.brandId = validated.brandId;
 
-    // Search by Name, SKU, or Barcode
+    // Search across Name, SKU, Barcode, Category, Subcategory, and Brand
     if (validated.search && validated.search.trim()) {
       const q = validated.search.trim();
       where.OR = [
         { name: { contains: q } },
         { sku: { contains: q } },
         { barcode: { contains: q } },
+        { category: { name: { contains: q } } },
+        { subcategory: { name: { contains: q } } },
+        { brand: { name: { contains: q } } },
       ];
     }
 
@@ -56,6 +60,7 @@ export class ProductService {
         orderBy: { name: 'asc' },
         include: {
           category: { select: { id: true, name: true } },
+          subcategory: { select: { id: true, name: true } },
           brand: { select: { id: true, name: true } },
           unit: { select: { id: true, name: true, shortCode: true, allowDecimal: true, category: true, precision: true, conversionFactor: true, baseUnitCode: true } },
         },
@@ -70,6 +75,8 @@ export class ProductService {
       barcode: p.barcode,
       categoryId: p.categoryId,
       categoryName: p.category?.name || null,
+      subcategoryId: p.subcategoryId,
+      subcategoryName: p.subcategory?.name || null,
       brandId: p.brandId,
       brandName: p.brand?.name || null,
       unitId: p.unitId,
@@ -108,6 +115,7 @@ export class ProductService {
       where: { id },
       include: {
         category: true,
+        subcategory: true,
         brand: true,
         unit: true,
       },
@@ -122,6 +130,8 @@ export class ProductService {
       barcode: p.barcode,
       categoryId: p.categoryId,
       categoryName: p.category?.name || null,
+      subcategoryId: p.subcategoryId,
+      subcategoryName: p.subcategory?.name || null,
       brandId: p.brandId,
       brandName: p.brand?.name || null,
       unitId: p.unitId,
@@ -157,6 +167,7 @@ export class ProductService {
       },
       include: {
         category: true,
+        subcategory: true,
         brand: true,
         unit: true,
       },
@@ -171,6 +182,8 @@ export class ProductService {
       barcode: p.barcode,
       categoryId: p.categoryId,
       categoryName: p.category?.name || null,
+      subcategoryId: p.subcategoryId,
+      subcategoryName: p.subcategory?.name || null,
       brandId: p.brandId,
       brandName: p.brand?.name || null,
       unitId: p.unitId,
@@ -256,10 +269,17 @@ export class ProductService {
       throw new Error(`Unit with ID ${validated.unitId} does not exist`);
     }
 
-    // 2. Verify Category & Brand if provided
+    // 2. Verify Category, Subcategory & Brand if provided
     if (validated.categoryId) {
       const cat = await prisma.category.findUnique({ where: { id: validated.categoryId } });
       if (!cat) throw new Error(`Category with ID ${validated.categoryId} does not exist`);
+    }
+    if (validated.subcategoryId) {
+      const sub = await prisma.subcategory.findUnique({ where: { id: validated.subcategoryId } });
+      if (!sub) throw new Error(`Subcategory with ID ${validated.subcategoryId} does not exist`);
+      if (validated.categoryId && sub.categoryId !== validated.categoryId) {
+        throw new Error(`Subcategory does not belong to the selected category`);
+      }
     }
     if (validated.brandId) {
       const brand = await prisma.brand.findUnique({ where: { id: validated.brandId } });
@@ -287,6 +307,7 @@ export class ProductService {
             sku: finalSku,
             barcode: validated.barcode || null,
             categoryId: validated.categoryId || null,
+            subcategoryId: validated.subcategoryId || null,
             brandId: validated.brandId || null,
             unitId: validated.unitId,
             purchasePrice: validated.purchasePrice,
@@ -301,6 +322,7 @@ export class ProductService {
           },
           include: {
             category: true,
+            subcategory: true,
             brand: true,
             unit: true,
           },
@@ -345,6 +367,8 @@ export class ProductService {
           barcode: product.barcode,
           categoryId: product.categoryId,
           categoryName: product.category?.name || null,
+          subcategoryId: product.subcategoryId,
+          subcategoryName: product.subcategory?.name || null,
           brandId: product.brandId,
           brandName: product.brand?.name || null,
           unitId: product.unitId,
@@ -421,6 +445,14 @@ export class ProductService {
       const cat = await prisma.category.findUnique({ where: { id: validated.categoryId } });
       if (!cat) throw new Error(`Category with ID ${validated.categoryId} does not exist`);
     }
+    if (validated.subcategoryId) {
+      const sub = await prisma.subcategory.findUnique({ where: { id: validated.subcategoryId } });
+      if (!sub) throw new Error(`Subcategory with ID ${validated.subcategoryId} does not exist`);
+      const targetCatId = validated.categoryId || existing.categoryId;
+      if (targetCatId && sub.categoryId !== targetCatId) {
+        throw new Error(`Subcategory does not belong to the selected category`);
+      }
+    }
     if (validated.brandId) {
       const brand = await prisma.brand.findUnique({ where: { id: validated.brandId } });
       if (!brand) throw new Error(`Brand with ID ${validated.brandId} does not exist`);
@@ -435,6 +467,7 @@ export class ProductService {
             ...(validated.sku ? { sku: validated.sku } : {}),
             ...(validated.barcode !== undefined ? { barcode: validated.barcode || null } : {}),
             ...(validated.categoryId !== undefined ? { categoryId: validated.categoryId } : {}),
+            ...(validated.subcategoryId !== undefined ? { subcategoryId: validated.subcategoryId } : {}),
             ...(validated.brandId !== undefined ? { brandId: validated.brandId } : {}),
             ...(validated.unitId ? { unitId: validated.unitId } : {}),
             ...(validated.purchasePrice !== undefined ? { purchasePrice: validated.purchasePrice } : {}),
@@ -447,6 +480,7 @@ export class ProductService {
           },
           include: {
             category: true,
+            subcategory: true,
             brand: true,
             unit: true,
           },
@@ -483,6 +517,8 @@ export class ProductService {
           barcode: updated.barcode,
           categoryId: updated.categoryId,
           categoryName: updated.category?.name || null,
+          subcategoryId: updated.subcategoryId,
+          subcategoryName: updated.subcategory?.name || null,
           brandId: updated.brandId,
           brandName: updated.brand?.name || null,
           unitId: updated.unitId,
