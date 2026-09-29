@@ -5,6 +5,7 @@ import { saleService } from '../src/main/modules/sales/sale.service';
 import { purchaseService } from '../src/main/modules/purchases/purchase.service';
 import { salesReturnService } from '../src/main/modules/returns/sales-return.service';
 import { customerAccountService } from '../src/main/modules/customers/customer-account.service';
+import { expenseService } from '../src/main/modules/expenses/expense.service';
 import { getPrismaClient, initializeDatabasePragmas } from '../src/main/database/client';
 
 const prisma = getPrismaClient();
@@ -945,6 +946,95 @@ export async function seedCatalog() {
         }
       }
     }
+  }
+
+  // 10. Auto-correct any negative stock products to ensure positive inventory valuation
+  const negativeStockProducts = await prisma.product.findMany({
+    where: { currentStock: { lt: 0 } },
+  });
+  for (const neg of negativeStockProducts) {
+    const fixedStock = Math.max(10, Math.abs(Number(neg.currentStock)));
+    console.log(`[Seed] Correcting negative stock for product ${neg.name} (${neg.currentStock} -> ${fixedStock})...`);
+    await prisma.product.update({
+      where: { id: neg.id },
+      data: {
+        currentStock: fixedStock,
+        openingStock: Math.max(Number(neg.openingStock), fixedStock + Math.abs(Number(neg.currentStock))),
+      },
+    });
+  }
+
+  // 11. Real Operating Expenses for Store (Today)
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const existingTodayExpenses = await prisma.expense.count({
+    where: {
+      status: 'POSTED',
+      date: { gte: todayStart, lte: todayEnd },
+    },
+  });
+
+  if (existingTodayExpenses === 0) {
+    console.log('[Seed] Seeding realistic operating expenses for today...');
+    let catUtilities = await prisma.expenseCategory.findFirst({ where: { name: 'Utilities', status: 'ACTIVE' } });
+    if (!catUtilities) {
+      catUtilities = await prisma.expenseCategory.create({
+        data: { name: 'Utilities', description: 'Electricity, Water, Internet', status: 'ACTIVE' },
+      });
+    }
+
+    let catOffice = await prisma.expenseCategory.findFirst({ where: { name: 'Office Supplies', status: 'ACTIVE' } });
+    if (!catOffice) {
+      catOffice = await prisma.expenseCategory.create({
+        data: { name: 'Office Supplies', description: 'Packaging and store materials', status: 'ACTIVE' },
+      });
+    }
+
+    let catMisc = await prisma.expenseCategory.findFirst({ where: { name: 'Miscellaneous', status: 'ACTIVE' } });
+    if (!catMisc) {
+      catMisc = await prisma.expenseCategory.create({
+        data: { name: 'Miscellaneous', description: 'General sundry store expenses', status: 'ACTIVE' },
+      });
+    }
+
+    await expenseService.createExpense(
+      {
+        categoryId: catUtilities.id,
+        amount: 1250,
+        paymentMethod: 'CASH',
+        date: new Date().toISOString(),
+        description: 'Store electricity and backup inverter diesel',
+        reference: 'EB-BILL-2026-SEP',
+      },
+      adminUserId
+    );
+
+    await expenseService.createExpense(
+      {
+        categoryId: catOffice.id,
+        amount: 550,
+        paymentMethod: 'UPI',
+        date: new Date().toISOString(),
+        description: 'Biodegradable carry bags and thermal receipt paper rolls',
+        reference: 'UPI-PKG-4821',
+      },
+      adminUserId
+    );
+
+    await expenseService.createExpense(
+      {
+        categoryId: catMisc.id,
+        amount: 240,
+        paymentMethod: 'CASH',
+        date: new Date().toISOString(),
+        description: 'Staff daily tea, refreshments and water cans',
+        reference: 'CASH-TEA-DAILY',
+      },
+      adminUserId
+    );
+    console.log('[Seed] Seeded 3 realistic operating expenses for today.');
   }
 
   console.log('[Seed] Complete Mixed Store Retail Catalog & Transaction initialization finished successfully!');

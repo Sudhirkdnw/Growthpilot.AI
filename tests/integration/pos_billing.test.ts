@@ -48,7 +48,7 @@ describe('Phase 7: POS & Billing Workstation Test Suite', () => {
     await prisma.brand.deleteMany({});
     await prisma.unit.deleteMany({});
     await prisma.userSession.deleteMany({});
-    await prisma.user.deleteMany({});
+    await prisma.user.deleteMany({ where: { username: { in: ['pos_admin', 'pos_cashier'] } } });
 
     // 1. Create Admin User & Session
     const adminUser = await prisma.user.create({

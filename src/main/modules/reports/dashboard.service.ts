@@ -34,10 +34,10 @@ export class DashboardService {
       stockAgg,
       productCounts,
     ] = await Promise.all([
-      // Today POSTED sales (gross)
+      // Today POSTED sales (gross & direct collections at checkout)
       this.prisma.sale.aggregate({
         where: { status: 'POSTED', saleDate: { gte: todayStart, lte: todayEnd } },
-        _sum: { grandTotal: true },
+        _sum: { grandTotal: true, paidAmount: true },
         _count: { id: true },
       }),
       // Today POSTED sales returns
@@ -58,7 +58,7 @@ export class DashboardService {
         _sum: { totalAmount: true },
         _count: { id: true },
       }),
-      // Today's actual collections (CustomerPayment.paymentDate — not Sale.paidAmount)
+      // Today's khata collections received (CustomerPayment)
       this.prisma.customerPayment.aggregate({
         where: { paymentDate: { gte: todayStart, lte: todayEnd } },
         _sum: { amount: true },
@@ -115,7 +115,9 @@ export class DashboardService {
     const todayPurchaseReturns = Math.round(Number(todayPurchaseReturnsAgg._sum.totalAmount || 0) * 100) / 100;
     const todayNetPurchases = Math.max(0, Math.round((todayGrossPurchases - todayPurchaseReturns) * 100) / 100);
 
-    const todayCollections = Math.round(Number(todayCollectionsAgg._sum.amount || 0) * 100) / 100;
+    const todaySalesPaid = Math.round(Number(todaySalesAgg._sum.paidAmount || 0) * 100) / 100;
+    const todayCustomerCollections = Math.round(Number(todayCollectionsAgg._sum.amount || 0) * 100) / 100;
+    const todayCollections = Math.round((todaySalesPaid + todayCustomerCollections) * 100) / 100;
     const todayExpenses = Math.round(Number(todayExpensesAgg._sum.amount || 0) * 100) / 100;
 
     const totalReceivables = Math.round(Number(receivablesAgg._sum.currentBalance || 0) * 100) / 100;

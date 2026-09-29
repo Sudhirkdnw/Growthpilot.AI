@@ -144,6 +144,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'reports:getTaxSummary',
       'reports:getProfit',
       'gateways:test',
+      'gateways:resolveProvider',
       'gateways:createOrder',
       'gateways:checkStatus',
       'gateways:cancel',

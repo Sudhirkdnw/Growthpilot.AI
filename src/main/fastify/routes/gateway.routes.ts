@@ -28,6 +28,26 @@ export const gatewayRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     }
   });
 
+  // Resolve active gateway provider for a given payment method
+  fastify.post('/api/gateways/resolve-provider', async (request, reply) => {
+    const token = (request.headers['authorization'] || (request.body as any)?.token) as string;
+
+    try {
+      AuthGuard.verifySession(token);
+      const { method } = request.body as any;
+      const result = await paymentGatewayService.resolveProviderForMethod(method);
+      return {
+        success: true,
+        method,
+        provider: result?.provider || null,
+        capabilities: result?.capabilities || undefined,
+      };
+    } catch (err: any) {
+      reply.status(401);
+      return { success: false, method: (request.body as any)?.method, provider: null, error: err?.message };
+    }
+  });
+
   // Create payment attempt & order for POS
   fastify.post('/api/gateways/create-order', async (request, reply) => {
     const token = (request.headers['authorization'] || (request.body as any)?.token) as string;

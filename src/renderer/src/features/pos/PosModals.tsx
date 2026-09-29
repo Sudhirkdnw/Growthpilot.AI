@@ -1361,10 +1361,26 @@ export function CheckoutModal({
               type="button"
               disabled={loading}
               onClick={onCompleteSale}
-              className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-white font-extrabold text-sm flex items-center justify-center space-x-2 shadow-sm transition-all disabled:opacity-50"
+              className={`w-full py-3 rounded-xl text-white font-extrabold text-sm flex items-center justify-center space-x-2 shadow-sm transition-all disabled:opacity-50 ${
+                paymentMethod === 'UPI'
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : paymentMethod === 'CARD'
+                  ? 'bg-indigo-600 hover:bg-indigo-700'
+                  : 'bg-primary hover:bg-primary-hover'
+              }`}
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
+              ) : paymentMethod === 'UPI' ? (
+                <>
+                  <Smartphone className="w-5 h-5" />
+                  <span>Proceed to UPI Payment (Live QR)</span>
+                </>
+              ) : paymentMethod === 'CARD' ? (
+                <>
+                  <CreditCard className="w-5 h-5" />
+                  <span>Proceed to Card Payment</span>
+                </>
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />

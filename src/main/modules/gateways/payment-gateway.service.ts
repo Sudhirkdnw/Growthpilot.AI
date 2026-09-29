@@ -17,7 +17,7 @@ import {
   PaymentAttemptDTO,
   PaymentMethod,
 } from '../../../shared/types';
-import { PaymentGatewayAdapter } from './adapters/gateway-adapter.interface';
+import { PaymentGatewayAdapter, PaymentStatusResult } from './adapters/gateway-adapter.interface';
 import { stripeAdapter } from './adapters/stripe.adapter';
 import { razorpayAdapter } from './adapters/razorpay.adapter';
 import { cashfreeAdapter } from './adapters/cashfree.adapter';
@@ -49,6 +49,52 @@ export class PaymentGatewayService {
    */
   getCapabilities(provider: GatewayProvider): GatewayCapabilities {
     return this.getAdapter(provider).getCapabilities();
+  }
+
+  /**
+   * Resolves the configured active gateway provider for a given payment method.
+   * Does NOT hardcode method -> gateway; determines via admin settings and provider capabilities.
+   */
+  async resolveProviderForMethod(
+    method: PaymentMethod
+  ): Promise<{ provider: GatewayProvider; capabilities: GatewayCapabilities } | null> {
+    const rawSettings = await settingsService.getRawAppSettings();
+    const stored = rawSettings.gateways || {};
+
+    if (method === 'UPI') {
+      if (stored.razorpay?.enabled) {
+        return { provider: 'RAZORPAY', capabilities: this.getCapabilities('RAZORPAY') };
+      }
+      if ((stored as any).cashfree?.enabled) {
+        return { provider: 'CASHFREE', capabilities: this.getCapabilities('CASHFREE') };
+      }
+      return null;
+    }
+
+    if (method === 'CARD') {
+      if (stored.stripe?.enabled) {
+        return { provider: 'STRIPE', capabilities: this.getCapabilities('STRIPE') };
+      }
+      if (stored.razorpay?.enabled) {
+        return { provider: 'RAZORPAY', capabilities: this.getCapabilities('RAZORPAY') };
+      }
+      if ((stored as any).cashfree?.enabled) {
+        return { provider: 'CASHFREE', capabilities: this.getCapabilities('CASHFREE') };
+      }
+      return null;
+    }
+
+    if (method === 'BANK_TRANSFER') {
+      if (stored.razorpay?.enabled) {
+        return { provider: 'RAZORPAY', capabilities: this.getCapabilities('RAZORPAY') };
+      }
+      if ((stored as any).cashfree?.enabled) {
+        return { provider: 'CASHFREE', capabilities: this.getCapabilities('CASHFREE') };
+      }
+      return null;
+    }
+
+    return null;
   }
 
   /**
@@ -141,10 +187,30 @@ export class PaymentGatewayService {
     req: CreatePaymentAttemptRequestDTO,
     userId?: string
   ): Promise<GatewayOrderResponseDTO> {
-    const { gateway, amount } = req;
+    const { amount } = req;
+    let gateway = req.gateway;
 
     if (!amount || amount <= 0) {
       throw new Error('Payment amount must be greater than zero.');
+    }
+
+    if (!gateway && req.method) {
+      const resolvedTarget = await this.resolveProviderForMethod(req.method);
+      if (!resolvedTarget) {
+        return {
+          success: false,
+          gateway: 'RAZORPAY',
+          orderId: '',
+          amount,
+          currency: req.currency || 'INR',
+          error: `No payment gateway is configured or enabled for payment method ${req.method}.`,
+        };
+      }
+      gateway = resolvedTarget.provider;
+    }
+
+    if (!gateway) {
+      gateway = 'RAZORPAY';
     }
 
     const adapter = this.getAdapter(gateway);
@@ -165,6 +231,7 @@ export class PaymentGatewayService {
     const amountMinor = Math.round(amount * 100);
     const orderNumber = req.orderNumber || `ORD-${Date.now().toString().slice(-6)}`;
     const idempotencyKey = req.idempotencyKey || `IDEM_${gateway}_${orderNumber}_${Date.now()}`;
+    const method = req.method || (gateway === 'STRIPE' ? 'CARD' : 'UPI');
 
     // 1. Idempotency Check: Existing PaymentAttempt
     const existing = await this.prisma.paymentAttempt.findUnique({
@@ -182,6 +249,7 @@ export class PaymentGatewayService {
         checkoutUrl: existing.checkoutUrl || undefined,
         paymentLinkUrl: existing.paymentLinkUrl || undefined,
         qrCodeData: existing.qrPayload || existing.checkoutUrl || undefined,
+        method: existing.method as PaymentMethod,
         capabilities: adapter.getCapabilities(),
       };
     }
@@ -241,6 +309,7 @@ export class PaymentGatewayService {
         paymentLinkUrl: gatewayRes.paymentLinkUrl,
         qrCodeData: gatewayRes.qrPayload || gatewayRes.checkoutUrl,
         paymentSessionId: gatewayRes.paymentSessionId,
+        method: req.method || (gateway === 'STRIPE' ? 'CARD' : 'UPI'),
         capabilities: adapter.getCapabilities(),
       };
     } catch (err: any) {
@@ -310,14 +379,59 @@ export class PaymentGatewayService {
       };
     }
 
-    // 3. Query Provider Gateway API for Live Status
-    const statusResult = await adapter.getPaymentStatus({
-      providerOrderId: attempt.providerOrderId || req.orderId || '',
-      providerPaymentId: attempt.providerPaymentId || undefined,
-      config: resolved,
-    });
+    // 3. Query Provider Gateway API for Live Status with Safe Network Boundary
+    let statusResult: PaymentStatusResult;
+    try {
+      statusResult = await adapter.getPaymentStatus({
+        providerOrderId: attempt.providerOrderId || req.orderId || '',
+        providerPaymentId: attempt.providerPaymentId || undefined,
+        config: resolved,
+      });
+    } catch (netErr: any) {
+      console.warn('[PaymentGatewayService] Error querying gateway live status:', netErr);
+      await this.prisma.paymentAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: 'UNKNOWN',
+          failureCode: 'PAYMENT_NETWORK_ERROR',
+          failureMessage: netErr?.message || 'Gateway unreachable or network timeout',
+        },
+      });
 
-    // 4. State Transitions
+      return {
+        success: false,
+        gateway,
+        orderId: attempt.providerOrderId || '',
+        attemptId: attempt.id,
+        status: 'UNKNOWN',
+        failureCode: 'PAYMENT_NETWORK_ERROR',
+        message: 'Gateway unreachable or network connection dropped. Please check payment status again before retrying.',
+      };
+    }
+
+    // 4. Handle UNKNOWN / REQUIRES_ACTION from Gateway
+    if (statusResult.status === 'UNKNOWN' || statusResult.status === 'REQUIRES_ACTION') {
+      await this.prisma.paymentAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: statusResult.status,
+          failureCode: statusResult.failureCode || 'PAYMENT_UNKNOWN',
+          failureMessage: statusResult.failureMessage || 'Payment status unresolved at gateway',
+        },
+      });
+
+      return {
+        success: false,
+        gateway,
+        orderId: attempt.providerOrderId || '',
+        attemptId: attempt.id,
+        status: statusResult.status,
+        failureCode: statusResult.failureCode || 'PAYMENT_UNKNOWN',
+        message: statusResult.failureMessage || 'Payment status unresolved. Please retry verification.',
+      };
+    }
+
+    // 5. State Transitions
     if (statusResult.status === 'SUCCESS') {
       const providerPaymentId = statusResult.providerPaymentId || attempt.providerOrderId || `PAY_${Date.now()}`;
 

@@ -11,6 +11,15 @@ export function registerGatewayIpc() {
     );
   });
 
+  ipcMain.handle('gateways:resolveProvider', async (_, { method, token }) => {
+    return await dispatchFastify(
+      'POST',
+      '/api/gateways/resolve-provider',
+      { method },
+      { authorization: token }
+    );
+  });
+
   ipcMain.handle('gateways:createOrder', async (_, { payload, token }) => {
     return await dispatchFastify(
       'POST',

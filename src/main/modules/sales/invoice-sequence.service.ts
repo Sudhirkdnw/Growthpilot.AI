@@ -31,10 +31,35 @@ export class InvoiceSequenceService {
       });
     }
 
-    const currentNumber = sequence.nextNumber;
-    const formatted = `${sequence.prefix}${String(currentNumber).padStart(sequence.padLength, '0')}`;
+    let currentNumber = sequence.nextNumber;
+    let formatted = `${sequence.prefix}${String(currentNumber).padStart(sequence.padLength, '0')}`;
 
-    // Increment sequence atomically
+    // Ensure collision resistance if records were created out-of-band
+    let isTaken = true;
+    while (isTaken) {
+      formatted = `${sequence.prefix}${String(currentNumber).padStart(sequence.padLength, '0')}`;
+      let existingRecord: any = null;
+
+      if (type === 'SALE_INVOICE') {
+        existingRecord = await tx.sale.findUnique({ where: { invoiceNumber: formatted } });
+      } else if (type === 'EXPENSE') {
+        existingRecord = await tx.expense.findUnique({ where: { expenseNumber: formatted } });
+      } else if (type === 'PURCHASE_BILL') {
+        existingRecord = await tx.purchase.findUnique({ where: { purchaseNumber: formatted } });
+      } else if (type === 'SALES_RETURN') {
+        existingRecord = await tx.salesReturn.findUnique({ where: { returnNumber: formatted } });
+      } else if (type === 'PURCHASE_RETURN') {
+        existingRecord = await tx.purchaseReturn.findUnique({ where: { returnNumber: formatted } });
+      }
+
+      if (existingRecord) {
+        currentNumber++;
+      } else {
+        isTaken = false;
+      }
+    }
+
+    // Increment sequence atomically to next available number
     await tx.invoiceSequence.update({
       where: { id: sequence.id },
       data: { nextNumber: currentNumber + 1 },

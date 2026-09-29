@@ -826,10 +826,12 @@ export interface GatewayCapabilities {
 export type PaymentAttemptStatus =
   | 'CREATED'
   | 'PENDING'
+  | 'REQUIRES_ACTION'
   | 'SUCCESS'
   | 'FAILED'
   | 'EXPIRED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'UNKNOWN';
 
 export interface PaymentAttemptDTO {
   id: string;
@@ -931,6 +933,7 @@ export interface GatewayOrderResponseDTO {
   paymentLinkUrl?: string;
   qrCodeData?: string;
   paymentSessionId?: string;
+  method?: PaymentMethod;
   capabilities?: GatewayCapabilities;
   error?: string;
 }
@@ -940,13 +943,22 @@ export interface GatewayStatusCheckResponseDTO {
   gateway: GatewayProvider;
   orderId: string;
   attemptId?: string;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'UNKNOWN' | 'REQUIRES_ACTION';
   paidAmount?: number;
   transactionRef?: string;
   saleCreated?: boolean;
   saleId?: string;
   invoiceNumber?: string;
   message?: string;
+  failureCode?: string;
+}
+
+export interface ResolveProviderResponseDTO {
+  success: boolean;
+  method: PaymentMethod;
+  provider: GatewayProvider | null;
+  capabilities?: GatewayCapabilities;
+  error?: string;
 }
 
 

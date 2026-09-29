@@ -44,7 +44,7 @@ export interface GetPaymentStatusRequest {
 }
 
 export interface PaymentStatusResult {
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'UNKNOWN' | 'REQUIRES_ACTION';
   providerPaymentId?: string;
   providerOrderId?: string;
   method?: PaymentMethod;

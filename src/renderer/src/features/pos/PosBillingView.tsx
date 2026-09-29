@@ -169,6 +169,8 @@ export function PosBillingView({
   const [previewDocument, setPreviewDocument] = useState<InvoiceDocumentDTO | null>(null);
   const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
   const [activeGateway, setActiveGateway] = useState<GatewayProvider>('RAZORPAY');
+  const [onlinePaymentMethod, setOnlinePaymentMethod] = useState<PaymentMethod>('UPI');
+  const [pendingSalePayload, setPendingSalePayload] = useState<any>(null);
 
   // Sell by Amount modal state
   const [sellByAmountModal, setSellByAmountModal] = useState<{ index: number; item: PosCartItem } | null>(null);
@@ -570,14 +572,87 @@ export function PosBillingView({
       }
     }
 
-    // If online payment gateway selected
-    if (['STRIPE', 'RAZORPAY', 'CASHFREE'].includes(paymentMethod)) {
-      setActiveGateway(paymentMethod as GatewayProvider);
+    const isCashCust = !selectedCustomer || selectedCustomer.id === 'cash-customer';
+    if (paymentMethod === 'CREDIT' && isCashCust) {
+      setFeedback({
+        type: 'error',
+        message: 'Credit sales (Khata) require a registered customer account. Please attach a customer account.',
+      });
+      return;
+    }
+
+    const numericPaid = paidAmount === '' ? totals.grandTotal : Math.max(0, Number(paidAmount));
+    if (paymentMethod !== 'CASH' && numericPaid > totals.grandTotal) {
+      setFeedback({
+        type: 'error',
+        message: `Overpayment is only supported for cash transactions. Amount tendered (${currencySymbol}${numericPaid.toFixed(2)}) exceeds grand total (${currencySymbol}${totals.grandTotal.toFixed(2)}).`,
+      });
+      return;
+    }
+
+    const salePayload = {
+      customerId: isCashCust ? null : selectedCustomer.id,
+      items: cart.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        sellingPrice: item.sellingPrice,
+        unitCode: item.unitCode,
+        discount: item.discount,
+        taxRate: item.taxRate,
+      })),
+      discount: totals.globalDiscount,
+      tax: totals.orderTax,
+      paidAmount: totals.grandTotal,
+      paymentMethod,
+      notes: saleNotes.trim() || undefined,
+      allowNegativeStockOverride,
+    };
+
+    // If online payment method selected (UPI or CARD or explicit gateway)
+    if (paymentMethod === 'UPI' || paymentMethod === 'CARD' || ['STRIPE', 'RAZORPAY', 'CASHFREE'].includes(paymentMethod as any)) {
+      const targetMethod: PaymentMethod = (paymentMethod === 'CARD' || (paymentMethod as any) === 'STRIPE') ? 'CARD' : 'UPI';
+      setShowCheckoutModal(false);
+      setOnlinePaymentMethod(targetMethod);
+      setPendingSalePayload(salePayload);
       setGatewayModalOpen(true);
       return;
     }
 
     await executeSalePost(paymentMethod);
+  };
+
+  const triggerInvoicePrint = async (saleId: string) => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI || !session) return;
+
+    try {
+      const docRes = await electronAPI.invoke('invoice:getDocument', {
+        documentType: 'SALE',
+        id: saleId,
+        token: session.token,
+      });
+
+      if (docRes?.document) {
+        const showPrev = settings?.printer?.showPreview ?? true;
+        if (showPrev) {
+          setPreviewDocument(docRes.document);
+        } else {
+          const fmt = settings?.printer?.paperFormat || 'THERMAL_80MM';
+          await electronAPI.invoke('printer:print', {
+            htmlContent: renderInvoiceHtml(docRes.document, fmt),
+            printerName: settings?.printer?.printerName || undefined,
+            silent: true,
+            copies: settings?.printer?.copies || 1,
+            paperFormat: fmt,
+            documentNumber: docRes.document.documentNumber,
+            userId: session.user.id,
+          });
+        }
+      }
+    } catch (printErr) {
+      console.warn('[Checkout Print Hook]', printErr);
+      // Non-blocking: printer error must never rollback sale or payment
+    }
   };
 
   const executeSalePost = async (
@@ -645,33 +720,7 @@ export function PosBillingView({
       loadInitialData();
 
       // Post-commit print preview / auto-print
-      try {
-        const docRes = await electronAPI.invoke('invoice:getDocument', {
-          documentType: 'SALE',
-          id: res.id,
-          token: session.token,
-        });
-
-        if (docRes?.document) {
-          const showPrev = settings?.printer?.showPreview ?? true;
-          if (showPrev) {
-            setPreviewDocument(docRes.document);
-          } else {
-            const fmt = settings?.printer?.paperFormat || 'THERMAL_80MM';
-            await electronAPI.invoke('printer:print', {
-              htmlContent: renderInvoiceHtml(docRes.document, fmt),
-              printerName: settings?.printer?.printerName || undefined,
-              silent: true,
-              copies: settings?.printer?.copies || 1,
-              paperFormat: fmt,
-              documentNumber: docRes.document.documentNumber,
-              userId: session.user.id,
-            });
-          }
-        }
-      } catch (printErr) {
-        console.warn('[Checkout Print Hook]', printErr);
-      }
+      await triggerInvoicePrint(res.id);
 
       setFeedback({ type: 'success', message: `Sale ${res.invoiceNumber} completed successfully!` });
     } catch (err: any) {
@@ -1315,17 +1364,45 @@ export function PosBillingView({
       {gatewayModalOpen && (
         <OnlineGatewayModal
           isOpen={gatewayModalOpen}
-          onClose={() => setGatewayModalOpen(false)}
+          onClose={() => {
+            setGatewayModalOpen(false);
+            setPendingSalePayload(null);
+          }}
+          paymentMethod={onlinePaymentMethod}
           initialGateway={activeGateway}
           amount={totals.grandTotal}
           customerName={selectedCustomer?.name || 'Walk-in Cash Customer'}
           customerPhone={selectedCustomer?.phone || ''}
           customerEmail={selectedCustomer?.email || ''}
+          salePayload={pendingSalePayload}
+          onSwitchPaymentMethod={(newMethod) => {
+            setOnlinePaymentMethod(newMethod);
+            setPaymentMethod(newMethod);
+          }}
+          onSwitchToCash={async () => {
+            setGatewayModalOpen(false);
+            setPaymentMethod('CASH');
+            await executeSalePost('CASH');
+          }}
           onPaymentComplete={async (gw: GatewayProvider, ref: string, paid: number, saleId?: string) => {
             setGatewayModalOpen(false);
+            setShowCheckoutModal(false);
+            setPendingSalePayload(null);
+
+            // Clean cart and reload
             clearCart();
             loadInitialData();
-            setFeedback({ type: 'success', message: `Online Payment confirmed via ${gw} (${ref})!` });
+            loadSalesHistory();
+
+            setFeedback({
+              type: 'success',
+              message: `Online Payment of ${currencySymbol}${paid.toFixed(2)} confirmed via ${gw} (${ref})!`,
+            });
+
+            // Post-commit print preview / auto-print if saleId was created
+            if (saleId) {
+              await triggerInvoicePrint(saleId);
+            }
           }}
         />
       )}

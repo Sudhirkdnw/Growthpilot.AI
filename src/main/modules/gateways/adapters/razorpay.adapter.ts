@@ -1,4 +1,6 @@
 import { GatewayCapabilities, GatewayProvider } from '../../../../shared/types';
+import { PNG } from 'pngjs';
+import jsQR from 'jsqr';
 import {
   PaymentGatewayAdapter,
   GatewayTestRequest,
@@ -160,8 +162,34 @@ export class RazorpayAdapter implements PaymentGatewayAdapter {
 
       if (qrResp.ok) {
         const qrData: any = await qrResp.json();
-        // Use official payload or image URL returned by Razorpay
-        qrPayload = qrData.image_url || qrData.payload || qrData.id;
+        // 1. If Razorpay already returned a raw UPI payload, use it directly
+        if (qrData.payload && typeof qrData.payload === 'string' && qrData.payload.startsWith('upi://')) {
+          qrPayload = qrData.payload;
+        } else if (qrData.image_url) {
+          // 2. Razorpay returns an image_url which embeds the official dynamic BharatQR / UPI intent.
+          // Decode the image to extract the exact native 'upi://pay?...' intent string so mobile scanners
+          // trigger GPay, PhonePe, Paytm directly instead of opening a PNG download link in the browser!
+          try {
+            const imgResp = await fetch(qrData.image_url, { signal: AbortSignal.timeout(5000) });
+            if (imgResp.ok) {
+              const arrayBuffer = await imgResp.arrayBuffer();
+              const png = PNG.sync.read(Buffer.from(arrayBuffer));
+              const code = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
+              if (code?.data && (code.data.startsWith('upi://') || code.data.startsWith('000201'))) {
+                qrPayload = code.data;
+              }
+            }
+          } catch (decodeErr) {
+            console.warn('[RazorpayAdapter] QR image UPI extraction fallback:', decodeErr);
+          }
+
+          // Fallback to image_url if decoding was not possible
+          if (!qrPayload) {
+            qrPayload = qrData.image_url;
+          }
+        } else {
+          qrPayload = qrData.payload || qrData.id;
+        }
       }
     } catch {
       // If official QR API is not enabled on account, continue with hosted checkout
